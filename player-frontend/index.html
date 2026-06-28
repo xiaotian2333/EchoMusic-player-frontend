@@ -86,14 +86,6 @@ try {
   </div>
 </div>
 
-<!-- 顶部右侧 (只保留用户) -->
-<div id="top-right">
-  <button id="user-capsule-hide-btn" class="user-capsule-hide-btn" type="button" onclick="toggleUserCapsuleAutoHide(event)" title="自动隐藏账号胶囊">‹</button>
-  <button id="user-btn" class="icon-btn logged-out" onclick="onUserBtnClick()" title="登录账号">
-    <span class="login-word">登录</span>
-  </button>
-</div>
-
 <button id="fx-fab" type="button" onclick="toggleFxPanel()" title="视觉控制台">
   <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 7h8"/><path d="M16 7h4"/><circle cx="14" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
 </button>
@@ -330,11 +322,6 @@ try {
       <button class="fx-mini-btn ghost" onclick="shuffleQueue()">随机</button>
     </div>
   </div>
-  <div class="panel-tabs">
-    <button id="tab-queue" class="panel-tab active" onclick="switchPlaylistTab('queue')">当前队列</button>
-    <button id="tab-pl" class="panel-tab" onclick="switchPlaylistTab('playlists')">我的歌单</button>
-    <button id="tab-podcast" class="panel-tab" onclick="switchPlaylistTab('podcasts')">我的播客</button>
-  </div>
   <div id="queue-pane">
     <div class="queue-toolbar">
       <div id="play-mode-chip" class="queue-chip">顺序循环</div>
@@ -345,27 +332,12 @@ try {
     </div>
     <div id="queue-list" class="queue-list"></div>
   </div>
-  <div id="pl-pane" style="display:none">
-    <div class="queue-toolbar">
-      <div class="queue-chip">登录后显示网易云 / QQ 歌单</div>
-      <button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)" style="height:26px;padding:0 10px;font-size:11px">刷新</button>
-    </div>
-    <div id="pl-list" style="margin-top:6px"></div>
-  </div>
-  <div id="podcast-pane" style="display:none">
-    <div class="queue-toolbar">
-      <div class="queue-chip">收藏 / 创建 / 喜欢</div>
-      <button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)" style="height:26px;padding:0 10px;font-size:11px">刷新</button>
-    </div>
-    <div id="podcast-list"></div>
-  </div>
 </div>
 
 <!-- 试听提醒 -->
 <div id="trial-banner">
   <svg class="ic" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   <span id="trial-text">仅播放试听片段</span>
-  <span id="trial-login-btn" class="login-link" onclick="showLoginModal()">扫码登录</span>
   <span class="close" onclick="document.getElementById('trial-banner').classList.remove('show')">×</span>
 </div>
 
@@ -477,18 +449,6 @@ try {
           <div id="control-artist" class="control-artist" onclick="openTrackDetailModal('artist')" title="歌手详情"></div>
         </div>
       </div>
-      <div id="quality-control" class="quality-control">
-        <button id="quality-btn" class="ctrl-btn quality-pill" onclick="toggleQualityPanel(event)" title="音质"><span id="quality-btn-label">臻音</span></button>
-        <div class="quality-popover" onclick="event.stopPropagation()">
-          <button class="quality-option svip-only" data-quality="jymaster" data-svip="1" onclick="setPlaybackQuality('jymaster')"><span>超清母带</span><small>SVIP / 最高规格</small></button>
-          <button class="quality-option" data-quality="hires" onclick="setPlaybackQuality('hires')"><span>高清臻音</span><small>默认 / 细节优先</small></button>
-          <button class="quality-option" data-quality="lossless" onclick="setPlaybackQuality('lossless')"><span>无损 SQ</span><small>FLAC 优先</small></button>
-          <button class="quality-option" data-quality="exhigh" onclick="setPlaybackQuality('exhigh')"><span>极高 HQ</span><small>320kbps</small></button>
-          <button class="quality-option" data-quality="standard" onclick="setPlaybackQuality('standard')"><span>标准</span><small>128kbps</small></button>
-        </div>
-      </div>
-      <button id="heart-btn" class="ctrl-btn" onclick="toggleLikeCurrent()" title="红心喜欢"><svg class="heart-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.45c-.32 0-.62-.12-.86-.34l-1.23-1.12C5.54 16.03 2.25 13.05 2.25 8.9 2.25 5.48 4.88 2.9 8.28 2.9c1.7 0 3.35.72 4.52 1.96C13.97 3.62 15.62 2.9 17.32 2.9c3.4 0 6.03 2.58 6.03 6 0 4.15-3.29 7.13-7.66 11.09l-1.23 1.12c-.24.22-.54.34-.86.34z"/></svg></button>
-      <button id="collect-btn" class="ctrl-btn" onclick="openCollectModalForCurrent()" title="收藏到歌单"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
     </div>
     <div class="control-cluster transport">
     <button id="play-mode-btn" class="ctrl-btn" onclick="cyclePlayMode()" title="播放顺序"><svg id="play-mode-icon" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
@@ -520,69 +480,6 @@ try {
 <div id="free-camera-hint"><b>自由镜头</b> R 固定/退出 · WASD 移动 · 鼠标转向 · Shift 加速 · Space/Ctrl 升降 · Q/E 轻微旋转 · 滚轮景深 · K 回正</div>
 <div id="loading-overlay"><div class="spinner"></div></div>
 
-<canvas id="login-guide-canvas" aria-hidden="true"></canvas>
-
-<!-- 登录模态 -->
-<div id="login-modal" class="modal-mask">
-  <div class="modal dual-login-modal">
-    <div class="login-platform-tabs" id="login-platform-tabs">
-      <button id="login-provider-netease" class="netease active" type="button" onclick="setLoginProvider('netease')">网易云</button>
-      <button id="login-provider-qq" class="qq" type="button" onclick="setLoginProvider('qq')">QQ 音乐</button>
-    </div>
-    <div class="login-intro">
-      <div class="login-intro-kicker">Mineradio</div>
-      <div class="login-intro-title">音乐播放器，也是一座视觉舞台</div>
-      <div class="login-intro-body">搜索或导入一首歌即可播放；登录后会同步歌单、红心和播客，让封面、歌词和粒子跟着音乐动起来。</div>
-    </div>
-    <h2 id="login-modal-title">扫码登录网易云音乐</h2>
-    <div id="login-modal-desc" class="desc">使用 <b>网易云音乐 App</b> 扫码，可同步歌单、红心与播客。</div>
-    <div id="qr-shell" class="qr-shell">
-      <img id="qr-img" src="" alt="">
-      <button id="qq-web-login-card" class="qq-login-mark" type="button" onclick="openProviderWebLogin()"><b>QQ</b><span>打开官方扫码窗口</span></button>
-    </div>
-    <div id="qr-status">正在生成二维码…</div>
-    <div id="qq-cookie-panel" class="qq-cookie-panel">
-      <textarea id="qq-cookie-input" class="qq-cookie-input" spellcheck="false" autocomplete="off" placeholder="uin=...; qqmusic_key=...; qm_keyst=..."></textarea>
-      <div class="qq-cookie-actions">
-        <div class="qq-cookie-note">从 y.qq.com 的登录会话导入。</div>
-        <button id="qq-cookie-save-btn" class="modal-btn primary" type="button" onclick="submitQQCookieLogin()">保存</button>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="modal-btn" onclick="closeLoginModal()">取消</button>
-      <button class="modal-btn" onclick="skipLoginAndFocusSearch()">先搜索一首歌</button>
-      <button id="login-both-btn" class="modal-btn" onclick="requestDualLoginMode()">我两个都要</button>
-      <button id="qq-cookie-toggle-btn" class="modal-btn" type="button" onclick="toggleQQCookiePanel()">手动导入</button>
-      <button id="refresh-qr-btn" class="modal-btn primary" onclick="refreshQr()">刷新二维码</button>
-    </div>
-  </div>
-</div>
-
-<!-- 用户模态 -->
-<div id="user-modal" class="modal-mask">
-  <div class="modal dual-user-modal">
-    <h2>账号信息</h2>
-    <div id="account-provider-chip" class="account-provider-chip netease"><span class="account-source-dot netease"></span><span>网易云音乐</span></div>
-    <img id="user-modal-avatar" src="" style="width:72px;height:72px;border-radius:50%;margin:0 auto 12px;object-fit:cover;background:rgba(255,255,255,0.1);display:block">
-    <div id="user-modal-name" style="font-size:15px;margin-bottom:4px"></div>
-    <div id="user-modal-vip" style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:20px;letter-spacing:.5px"></div>
-    <div class="user-platform-tabs" id="user-platform-tabs">
-      <button id="user-provider-netease" class="netease active" type="button" onclick="setActiveAccountProvider('netease')">网易云</button>
-      <button id="user-provider-qq" class="qq" type="button" onclick="setActiveAccountProvider('qq')">QQ 音乐</button>
-      <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我两个都要</button>
-    </div>
-    <div class="account-modal-actions">
-      <button id="account-add-netease" class="modal-btn" onclick="openProviderLogin('netease')">补登网易云</button>
-      <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登 QQ 音乐</button>
-    </div>
-    <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
-    <div class="btn-row">
-      <button class="modal-btn" onclick="closeUserModal()">关闭</button>
-      <button id="account-logout-btn" class="modal-btn primary" onclick="logoutActiveAccount()">退出当前平台</button>
-    </div>
-  </div>
-</div>
-
 <!-- 封面裁剪模态 -->
 <div id="cover-crop-modal" class="modal-mask">
   <div class="modal cover-crop-modal">
@@ -602,22 +499,6 @@ try {
     <div class="btn-row">
       <button class="modal-btn" onclick="closeCoverCropModal()">取消</button>
       <button class="modal-btn primary" onclick="commitCoverCrop()">使用封面</button>
-    </div>
-  </div>
-</div>
-
-<!-- 收藏到歌单模态 -->
-<div id="collect-modal" class="modal-mask">
-  <div class="modal collect-modal">
-    <h2>收藏到歌单</h2>
-    <div id="collect-current" class="collect-current"></div>
-    <div class="collect-create">
-      <input id="collect-new-name" type="text" placeholder="新建歌单名称" autocomplete="off" maxlength="40">
-      <button class="modal-btn primary" onclick="createPlaylistFromCollect()">创建</button>
-    </div>
-    <div id="collect-list" class="collect-list"></div>
-    <div class="btn-row">
-      <button class="modal-btn" onclick="closeCollectModal()">关闭</button>
     </div>
   </div>
 </div>
