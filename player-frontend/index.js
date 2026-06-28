@@ -36,9 +36,7 @@ var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
 var DEFAULT_PLAYBACK_VISUAL_PRESET = 0;
 var MAX_VISUAL_PRESET_INDEX = 6;
 var UPLOAD_TIP_STORE_KEY = 'mineradio-upload-tip-seen';
-var DIY_MODE_STORE_KEY = 'mineradio-diy-player-mode-v1';
 var PLAYLIST_PANEL_PIN_STORE_KEY = 'mineradio-playlist-panel-pinned-v1';
-var FX_FAB_AUTO_HIDE_STORE_KEY = 'mineradio-fx-fab-auto-hide-v1';
 var CONTROLS_AUTO_HIDE_STORE_KEY = 'mineradio-controls-auto-hide-v1';
 var FREE_CAMERA_STORE_KEY = 'mineradio-free-camera-v1';
 var VISUAL_GUIDE_SEEN_STORE_KEY = 'mineradio-visual-guide-seen-v2';
@@ -51,7 +49,6 @@ function normalizeVisualPresetIndex(value, fallback) {
   if (!isFinite(n)) n = DEFAULT_PLAYBACK_VISUAL_PRESET;
   return Math.round(clampRange(n, 0, MAX_VISUAL_PRESET_INDEX));
 }
-var diyPlayerMode = readDiyModePreference();
 var prefersReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 function isEchoPluginBridgeMode() {
   return !!(document.body && document.body.classList.contains('echo-plugin-bridge'));
@@ -155,12 +152,6 @@ function readSavedVolume() {
     return 1.0;
   }
 }
-function readDiyModePreference() {
-  try { return localStorage.getItem(DIY_MODE_STORE_KEY) === '1'; } catch (e) { return false; }
-}
-function saveDiyModePreference(on) {
-  try { localStorage.setItem(DIY_MODE_STORE_KEY, on ? '1' : '0'); } catch (e) {}
-}
 function readBooleanPreference(key, fallback) {
   try {
     var raw = localStorage.getItem(key);
@@ -172,128 +163,6 @@ function readBooleanPreference(key, fallback) {
 }
 function saveBooleanPreference(key, on) {
   try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
-}
-function applyFxFabAutoHideState(opts) {
-  opts = opts || {};
-  document.body.classList.toggle('fx-fab-auto-hide', !!fxFabAutoHide);
-  if (!fxFabAutoHide) {
-    document.body.classList.remove('fx-fab-peek');
-    fxFabAutoHideRevealArmed = true;
-  } else if (opts.forceHidden) {
-    document.body.classList.remove('fx-fab-peek');
-    fxFabAutoHideRevealArmed = false;
-  }
-  var btn = document.getElementById('fx-fab-hide-btn');
-  if (btn) {
-    btn.classList.toggle('on', !!fxFabAutoHide);
-    btn.textContent = fxFabAutoHide ? '›' : '‹';
-    btn.title = fxFabAutoHide ? '取消自动隐藏视觉控制台' : '自动隐藏视觉控制台';
-  }
-}
-function toggleFxFabAutoHide(e) {
-  if (e && e.stopPropagation) e.stopPropagation();
-  fxFabAutoHide = !fxFabAutoHide;
-  saveBooleanPreference(FX_FAB_AUTO_HIDE_STORE_KEY, fxFabAutoHide);
-  applyFxFabAutoHideState({ forceHidden: fxFabAutoHide });
-  showToast(fxFabAutoHide ? '视觉控制台按钮已自动隐藏' : '视觉控制台按钮已固定显示');
-}
-function updateFxFabAutoHideFromPointer(x, y) {
-  if (!fxFabAutoHide || (!diyPlayerMode && !isEchoPluginBridgeMode()) || immersiveMode) {
-    document.body.classList.remove('fx-fab-peek');
-    fxFabAutoHideRevealArmed = true;
-    return;
-  }
-  var panel = document.getElementById('fx-panel');
-  var panelOpen = !!(panel && (panel.classList.contains('peek') || panel.classList.contains('show')));
-  var nearBottomRight = x > innerWidth - 126 && y > innerHeight - 158;
-  if (!nearBottomRight) fxFabAutoHideRevealArmed = true;
-  document.body.classList.toggle('fx-fab-peek', panelOpen || (nearBottomRight && fxFabAutoHideRevealArmed));
-}
-function layoutFullscreenDiyZone() {
-  var width = innerWidth < 820 ? 104 : 128;
-  var height = innerWidth < 720 ? 48 : 52;
-  var left = innerWidth - 510;
-  var top = 24;
-  var anchor = document.getElementById('search-area') || document.getElementById('fx-fab');
-  if (anchor) {
-    var rect = anchor.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      var gap = innerWidth < 820 ? 8 : 12;
-      left = rect.left + rect.width / 2 - width / 2;
-      top = rect.bottom + gap;
-    }
-  }
-  left = Math.max(12, Math.min(innerWidth - width - 12, left));
-  top = Math.max(8, Math.min(innerHeight - height - 8, top));
-  document.documentElement.style.setProperty('--fullscreen-diy-left', left.toFixed(1) + 'px');
-  document.documentElement.style.setProperty('--fullscreen-diy-top', top.toFixed(1) + 'px');
-  document.documentElement.style.setProperty('--fullscreen-diy-width', width + 'px');
-  return { left: left, top: top, width: width, height: height };
-}
-function shouldSuppressFullscreenDiyPeek() {
-  var fxPanel = document.getElementById('fx-panel');
-  var fxPanelOpen = !!(fxPanel && (fxPanel.classList.contains('peek') || fxPanel.classList.contains('show')));
-  return !!(visualGuideActive || fxPanelOpen);
-}
-function updateFullscreenDiyPeekFromPointer(x, y) {
-  var isFullscreen = !!(desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen'));
-  if (!isFullscreen || immersiveMode || shouldSuppressFullscreenDiyPeek()) {
-    document.body.classList.remove('fullscreen-diy-peek');
-    return;
-  }
-  var rect = layoutFullscreenDiyZone();
-  var anchor = document.getElementById('search-area') || document.getElementById('fx-fab');
-  var anchorRect = anchor ? anchor.getBoundingClientRect() : rect;
-  var hitLeft = Math.min(rect.left, anchorRect.left) - 26;
-  var hitRight = Math.max(rect.left + rect.width, anchorRect.right) + 26;
-  var hitTop = Math.min(rect.top, anchorRect.top) - 18;
-  var hitBottom = Math.max(rect.top + rect.height, anchorRect.bottom) + 16;
-  var active = x >= hitLeft && x <= hitRight && y >= hitTop && y <= hitBottom;
-  document.body.classList.toggle('fullscreen-diy-peek', active);
-}
-function isDiyMode() {
-  return !!diyPlayerMode;
-}
-function syncDiyModeButton() {
-  ['diy-mode-btn', 'fullscreen-diy-btn'].forEach(function(id) {
-    var btn = document.getElementById(id);
-    if (!btn) return;
-    btn.classList.toggle('on', diyPlayerMode);
-    btn.setAttribute('aria-pressed', diyPlayerMode ? 'true' : 'false');
-    btn.title = diyPlayerMode ? '关闭 DIY 玩家模式' : '开启 DIY 玩家模式';
-    btn.setAttribute('aria-label', btn.title);
-  });
-}
-function applyDiyMode(on, opts) {
-  opts = opts || {};
-  diyPlayerMode = !!on;
-  document.documentElement.classList.toggle('diy-mode-preload', diyPlayerMode);
-  document.documentElement.classList.toggle('simple-mode-preload', !diyPlayerMode);
-  document.body.classList.toggle('diy-mode', diyPlayerMode);
-  document.body.classList.toggle('simple-mode', !diyPlayerMode);
-  syncDiyModeButton();
-  if (opts.save) saveDiyModePreference(diyPlayerMode);
-  if (!diyPlayerMode) {
-    toggleFxPanel(false);
-    togglePlaylistPanel(false);
-    closeUploadTip(false);
-    var volume = document.getElementById('volume-control');
-    if (volume) volume.classList.remove('open');
-  }
-  if (opts.toast) showToast(diyPlayerMode ? 'DIY 玩家模式已开启' : '已切回简约模式');
-  if (opts.animate && window.gsap) {
-    ['diy-mode-btn', 'fullscreen-diy-btn'].forEach(function(id) {
-      var btn = document.getElementById(id);
-      if (btn) window.gsap.fromTo(btn, { scale: 0.94 }, { scale: 1, duration: 0.34, ease: 'back.out(1.8)', overwrite: true });
-    });
-  }
-}
-function toggleDiyMode() {
-  applyDiyMode(!diyPlayerMode, { save: true, toast: true, animate: true });
-  if (visualGuideActive) {
-    visualGuideState.mode = diyPlayerMode ? 'diy' : 'simple';
-    showVisualGuideStep(0);
-  }
 }
 var targetVolume = readSavedVolume();
 var lastNonZeroVolume = targetVolume > 0.01 ? targetVolume : 0.8;
@@ -632,8 +501,6 @@ var cursorHideTimer = null;
 var CURSOR_HIDE_DELAY = 2500;
 var fxPanelPinned = false;
 var playlistPanelPinned = readBooleanPreference(PLAYLIST_PANEL_PIN_STORE_KEY, false);
-var fxFabAutoHide = readBooleanPreference(FX_FAB_AUTO_HIDE_STORE_KEY, false);
-var fxFabAutoHideRevealArmed = true;
 var immersiveMode = false;
 var immersiveState = {
   shelfMode: null,
@@ -2595,17 +2462,15 @@ function updateControlsAutoHideFromPointer(x, y) {
   var bar = document.getElementById('bottom-bar');
   if (!bar || !bar.classList.contains('visible')) return;
   if (!controlsAutoHide) { setControlsHidden(false); return; }
-  if (diyPlayerMode || isEchoPluginBridgeMode()) {
-    var fxPanel = document.getElementById('fx-panel');
-    var fxFab = document.getElementById('fx-fab');
-    var fr = fxPanel ? fxPanel.getBoundingClientRect() : null;
-    var br = fxFab ? fxFab.getBoundingClientRect() : null;
-    var overFxPanel = fxPanel && (fxPanel.classList.contains('peek') || fxPanel.classList.contains('show')) && fr && x >= fr.left - 18 && x <= fr.right + 18 && y >= fr.top - 18 && y <= fr.bottom + 18;
-    var overFxFab = br && x >= br.left - 18 && x <= br.right + 18 && y >= br.top - 18 && y <= br.bottom + 18;
-    if (overFxPanel || overFxFab) {
-      scheduleControlsHide(80);
-      return;
-    }
+  var fxPanel = document.getElementById('fx-panel');
+  var fxFab = document.getElementById('fx-fab');
+  var fr = fxPanel ? fxPanel.getBoundingClientRect() : null;
+  var br = fxFab ? fxFab.getBoundingClientRect() : null;
+  var overFxPanel = fxPanel && (fxPanel.classList.contains('peek') || fxPanel.classList.contains('show')) && fr && x >= fr.left - 18 && x <= fr.right + 18 && y >= fr.top - 18 && y <= fr.bottom + 18;
+  var overFxFab = br && x >= br.left - 18 && x <= br.right + 18 && y >= br.top - 18 && y <= br.bottom + 18;
+  if (overFxPanel || overFxFab) {
+    scheduleControlsHide(80);
+    return;
   }
   controlsLastMoveAt = performance.now();
   var rect = bar.getBoundingClientRect();
@@ -2742,7 +2607,7 @@ var particlePointerLocalHit = new THREE.Vector3();
 var particlePointerQuat = new THREE.Quaternion();
 var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
-var UI_HIT_SELECTOR = '#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
+var UI_HIT_SELECTOR = '#search-area,#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
 
 function isPointerOverUi(e) {
   if (!e) return false;
@@ -17061,10 +16926,6 @@ function toggleFx(key) {
 function toggleFxPanel(force) {
   var el = document.getElementById('fx-panel');
   if (!el) return;
-  if (!diyPlayerMode && !isEchoPluginBridgeMode() && force !== false) {
-    showToast('开启 DIY 玩家模式后可打开视觉控制台');
-    return;
-  }
   var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek');
   if (peekTimers && peekTimers.fx) { clearTimeout(peekTimers.fx); peekTimers.fx = null; }
   fxPanelPinned = false;
@@ -17197,18 +17058,15 @@ function updateImmersiveButton() {
 
 function closeImmersiveInterference() {
   closeMiniQueue();
-  toggleFxPanel(false);
   closeUploadTip(false);
   closeCoverCropModal();
   closeCustomLyricModal();
   closeTrackDetailModal();
   if (!localBeatAnalysis.active) closeLocalBeatModal();
-  ['search-area', 'fx-panel', 'trial-banner', 'ai-depth-chip', 'beat-chip'].forEach(function(id){
+  ['search-area', 'trial-banner', 'ai-depth-chip', 'beat-chip'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) el.classList.remove('peek', 'show', 'closing');
   });
-  var fab = document.getElementById('fx-fab');
-  if (fab) fab.classList.remove('active');
   setFocusZone(null, true);
 }
 
@@ -18379,49 +18237,17 @@ var visualGuideSteps = [
     target: 'shelf',
     kicker: '04 / Visual',
     title: '进阶视觉都放在舞台周围',
-    body: '右侧 3D 歌单架和 DIY 玩家模式是进阶入口；先播放一首歌，再慢慢调视觉效果。'
-  },
-  {
-    selector: '#diy-mode-btn',
-    kicker: '05 / DIY',
-    title: '高级功能在 DIY 玩家模式',
-    body: '视觉控制台、上传/封面、自定义歌词和更多面板都会在这里展开。'
-  }
-];
-var visualGuideStepsDiy = [
-  {
-    selector: '#diy-mode-btn',
-    kicker: '01 / DIY',
-    title: 'DIY 玩家模式已展开',
-    body: '这里可以随时切回默认模式。DIY 模式会显示完整控制台、上传、视觉面板和高级调参。'
-  },
-  {
-    selector: '#search-box',
-    kicker: '02 / Search',
-    title: '搜索源和导入入口会展开',
-    body: '顶部搜索支持更多来源切换，上传歌曲、封面等入口也会在 DIY 模式中显示。'
-  },
-  {
-    selector: '#playlist-panel',
-    kicker: '03 / Library',
-    title: '左侧是完整歌单和队列',
-    body: '靠近左侧边缘可以打开歌单/队列面板，在这里管理当前队列和已打开的歌单。'
+    body: '右侧 3D 歌单架和视觉控制台是进阶入口；先播放一首歌，再慢慢调视觉效果。'
   },
   {
     selector: '#fx-panel',
-    kicker: '04 / Visual Lab',
+    kicker: '05 / Visual Lab',
     title: '右侧是视觉控制台',
     body: '靠近右下角或点击视觉按钮，可以调节粒子、歌词、镜头、3D 歌单架和更多视觉参数。'
-  },
-  {
-    target: 'shelf',
-    kicker: '05 / Shelf',
-    title: '3D 歌单架支持直接打开',
-    body: '右侧的 3D 歌单架会在靠近时半透明浮现，点击卡片可打开歌单，点卡片里的播放按钮可直接播放整张歌单。'
   }
 ];
 function activeVisualGuideSteps() {
-  return diyPlayerMode ? visualGuideStepsDiy : visualGuideSteps;
+  return visualGuideSteps;
 }
 function visualGuideWasSeen() {
   try { return localStorage.getItem(VISUAL_GUIDE_SEEN_STORE_KEY) === '1'; } catch (e) { return true; }
@@ -18449,7 +18275,6 @@ function startVisualGuide(opts) {
     searchWasPeek: !!(document.getElementById('search-area') && document.getElementById('search-area').classList.contains('peek')),
     fxWasPeek: !!(document.getElementById('fx-panel') && document.getElementById('fx-panel').classList.contains('peek')),
     plWasPeek: !!(document.getElementById('playlist-panel') && document.getElementById('playlist-panel').classList.contains('peek')),
-    mode: diyPlayerMode ? 'diy' : 'simple',
     manual: !!opts.manual
   };
   var guide = document.getElementById('visual-guide');
@@ -18474,7 +18299,6 @@ function prepareVisualGuideStep(step) {
   if (step && step.selector === '#playlist-panel') setPeek(playlistPanel, true, 'pl');
   else if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
   if (step && step.selector === '#fx-panel') setPeek(fxPanel, true, 'fx');
-  else if (fxPanel && !visualGuideState.fxWasPeek) setPeek(fxPanel, false, 'fx');
   if (step && (step.selector === '#bottom-bar' || step.selector === '#mini-queue-btn' || step.selector === '#immersive-btn')) {
     if (bottom) bottom.classList.add('visible');
     revealBottomControls(1500);
@@ -18539,22 +18363,11 @@ function guideTargetRect(step) {
       return { left: left, top: top, width: right - left, height: bottom - top, right: right, bottom: bottom };
     }
   }
-  var isFullscreenDiyStep = !!(step && step.selector === '#diy-mode-btn' && (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')));
-  var useFullscreenDiyTarget = isFullscreenDiyStep && !shouldSuppressFullscreenDiyPeek();
-  if (useFullscreenDiyTarget) {
-    layoutFullscreenDiyZone();
-    document.body.classList.add('fullscreen-diy-peek');
-  }
-  var target = step && step.selector ? document.querySelector(useFullscreenDiyTarget ? '#fullscreen-diy-btn' : step.selector) : null;
+  var target = step && step.selector ? document.querySelector(step.selector) : null;
   if (target) {
     var style = window.getComputedStyle(target);
     var rect = target.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') return rect;
-  }
-  if (step && step.selector === '#diy-mode-btn') {
-    var fallbackRight = Math.max(116, innerWidth - 26);
-    var fallbackTop = 16;
-    return { left: fallbackRight - 88, top: fallbackTop, width: 88, height: 38, right: fallbackRight, bottom: fallbackTop + 38 };
   }
   return { left: innerWidth * 0.5 - 120, top: innerHeight * 0.5 - 40, width: 240, height: 80, right: innerWidth * 0.5 + 120, bottom: innerHeight * 0.5 + 40 };
 }
@@ -18609,14 +18422,12 @@ function closeVisualGuide(markSeen) {
     guide.setAttribute('aria-hidden', 'true');
   }
   document.body.classList.remove('visual-guide-active');
-  document.body.classList.remove('fullscreen-diy-peek');
   var search = document.getElementById('search-area');
   var bottom = document.getElementById('bottom-bar');
   var fxPanel = document.getElementById('fx-panel');
   var playlistPanel = document.getElementById('playlist-panel');
   if (typeof setShelfGuideCueActive === 'function') setShelfGuideCueActive(false);
   if (search && !visualGuideState.searchWasPeek && document.activeElement !== $input) setPeek(search, false, 'search');
-  if (fxPanel && !visualGuideState.fxWasPeek) setPeek(fxPanel, false, 'fx');
   if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
   if (bottom && !visualGuideState.bottomWasVisible && !playing) bottom.classList.remove('visible', 'soft-hidden');
 }
@@ -19070,7 +18881,6 @@ function scheduleMainRendererViewportRefresh(reason) {
 }
 window.addEventListener('resize', function(){
   scheduleMainRendererViewportRefresh('resize');
-  if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
 });
 document.addEventListener('keydown', function(e){
   if (isTypingTarget(e.target)) return;
@@ -19119,7 +18929,7 @@ document.addEventListener('keydown', function(e){
     }
     if (miniQueueOpen) { closeMiniQueue(); return; }
     if (shelfManager && shelfManager.hasOpenContent()) { safeShelfCloseContent('escape-key'); return; }
-    toggleFxPanel(false); togglePlaylistPanel(false);
+    togglePlaylistPanel(false);
   }
   else if (e.code === 'KeyL') { if (!immersiveMode) toggleLyricsPanel(); }
   else if (e.code === 'KeyI') toggleImmersiveMode();
@@ -19137,10 +18947,8 @@ var PEEK_HIDE_DELAY = 170;
 var peekTimers = { search:null, fx:null, pl:null };
 function setPeek(el, on, key) {
   if (!el) return;
-  if (immersiveMode && on && (key === 'search' || key === 'fx')) return;
-  if (on && !diyPlayerMode && !isEchoPluginBridgeMode() && key === 'fx') return;
+  if (immersiveMode && on && key === 'search') return;
   if (!on && key === 'pl' && playlistPanelPinned) return;
-  if (on && key === 'fx') document.body.classList.remove('fullscreen-diy-peek');
   if (on) {
     var wasPeek = el.classList.contains('peek');
     if (peekTimers[key]) { clearTimeout(peekTimers[key]); peekTimers[key] = null; }
@@ -19206,7 +19014,6 @@ function closeUploadTip(manual) {
   }
 }
 function maybeShowUploadTipOnce() {
-  if (!diyPlayerMode) return;
   if (uploadTipWasSeen()) return;
   if (immersiveMode) {
     setTimeout(maybeShowUploadTipOnce, 1800);
@@ -19317,8 +19124,6 @@ window.addEventListener('mousemove', function(e){
   var pp = document.getElementById('playlist-panel');
   var ex = e.clientX, ey = e.clientY, W = innerWidth, H = innerHeight;
   updateUserCapsuleAutoHideFromPointer(ex, ey);
-  updateFxFabAutoHideFromPointer(ex, ey);
-  updateFullscreenDiyPeekFromPointer(ex, ey);
   if (immersiveMode) {
     updateShelfHoverCueFromPointer(e);
     updateShelfCardHoverSelection(e);
@@ -19351,17 +19156,7 @@ window.addEventListener('mousemove', function(e){
   var inSearchPanel = saOn && ex >= saRect.left - 24 && ex <= saRect.right + 24 && ey >= saRect.top - 22 && ey <= saRect.bottom + 42;
   if (ey < 66 || inSearchPanel || searchFocused || uploadTipOpen) setPeek(sa, true, 'search');
   else if (saOn) setPeek(sa, false, 'search');
-  // 控制台: 右下角触发；一旦面板出现，就按真实面板矩形保留显示
-  var fpOn = fp.classList.contains('peek') || fp.classList.contains('show');
-  var fpRect = fp.getBoundingClientRect();
-  var fab = document.getElementById('fx-fab');
-  var fabRect = fab ? fab.getBoundingClientRect() : { left:W, right:W, top:H, bottom:H };
-  var inFxPanel = fpOn && ex >= fpRect.left - 24 && ex <= fpRect.right + 24 && ey >= fpRect.top - 24 && ey <= fpRect.bottom + 24;
-  var inFxFab = ex >= fabRect.left - 18 && ex <= fabRect.right + 18 && ey >= fabRect.top - 18 && ey <= fabRect.bottom + 18;
-  var inFxBridge = fpOn && ex >= Math.min(fpRect.left, fabRect.left) - 18 && ex <= W && ey >= fpRect.bottom - 10 && ey <= fabRect.bottom + 18;
-  if (!diyPlayerMode && !isEchoPluginBridgeMode()) inFxPanel = inFxFab = inFxBridge = false;
-  if (inFxFab || inFxPanel || inFxBridge) setPeek(fp, true, 'fx');
-  else if (fpOn) setPeek(fp, false, 'fx');
+  // 视觉控制台只由右下角按钮展开，由标题栏关闭按钮关闭。
   // 歌单/队列 DOM 面板不再由左侧边缘自动弹出，仅保留已打开后的悬停保持
   var ppOn = pp.classList.contains('peek');
   var ppRect = pp.getBoundingClientRect();
@@ -19523,11 +19318,9 @@ function toggleFullscreen() {
     document.body.classList.toggle('desktop-maximized', isMaximized);
     document.body.classList.toggle('desktop-fullscreen', isFullScreen);
     desktopRuntimeState.fullscreen = isFullScreen;
-    if (isFullScreen) layoutFullscreenDiyZone();
     if (isFullScreen !== wasFullScreen) {
       scheduleMainRendererViewportRefresh('desktop-shell-state');
       if (!isFullScreen) {
-        document.body.classList.remove('fullscreen-diy-peek');
         setTimeout(function(){ clearPlayerControlFocusState('desktop-fullscreen-exit'); }, 80);
       }
     }
@@ -19571,7 +19364,6 @@ function toggleFullscreen() {
 // ============================================================
 //  启动
 // ============================================================
-applyDiyMode(diyPlayerMode, { save: false });
 bindFxPanel();
 applySavedLyricPaletteState();
 bindVolumeControls();
@@ -19585,7 +19377,6 @@ scheduleUiWarmTask(function(){
     if (renderer && renderer.compile && scene && camera) renderer.compile(scene, camera);
   } catch (e) {}
 }, 900);
-applyFxFabAutoHideState();
 applyControlsAutoHidePreference();
 applyWallpaperModeState(false);
 setShelfMode(fx.shelf);
