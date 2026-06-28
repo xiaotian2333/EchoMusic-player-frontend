@@ -20,14 +20,6 @@
   </div>
   <div class="desktop-window-controls">
     <button id="visual-guide-btn" class="icon-btn" type="button" onclick="startVisualGuide({ manual: true })" title="查看使用引导" aria-label="查看使用引导">?</button>
-    <button id="update-entry" class="update-entry" type="button" onclick="openUpdatePanel()" title="发现新版本" aria-label="发现新版本">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle class="update-ring" cx="12" cy="12" r="8.8"></circle>
-        <circle id="update-progress-ring" class="update-progress-ring" cx="12" cy="12" r="8.8"></circle>
-        <path class="update-arrow" d="M12 16.5V7.5"></path>
-        <path class="update-arrow" d="M8.7 10.7 12 7.4l3.3 3.3"></path>
-      </svg>
-    </button>
     <button class="desktop-window-btn" data-window-action="minimize" title="最小化" aria-label="最小化">
       <svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg>
     </button>
@@ -424,33 +416,6 @@
       <button id="local-beat-later-btn" class="modal-btn" onclick="closeLocalBeatModal()">暂不分析</button>
       <button id="local-beat-cancel-btn" class="modal-btn" onclick="cancelLocalBeatAnalysis()" style="display:none">取消</button>
       <button id="local-beat-start-btn" class="modal-btn primary" onclick="startLocalBeatAnalysis()">开始分析</button>
-    </div>
-  </div>
-</div>
-
-<div id="update-modal" class="modal-mask">
-  <div class="modal update-modal">
-    <div class="update-panel-inner">
-      <div class="update-panel-head">
-        <div>
-          <div class="update-kicker">MINERADIO</div>
-          <div id="update-modal-title" class="update-title">New release</div>
-          <div id="update-modal-version" class="update-version">v1.0.10</div>
-        </div>
-      </div>
-      <div class="update-hero">
-        <div id="update-hero-main" class="update-hero-main">电影镜头更稳，音源兜底更顺。</div>
-        <div id="update-hero-sub" class="update-hero-sub"></div>
-      </div>
-      <div id="update-list" class="update-list"></div>
-      <div class="update-actions">
-        <button id="update-primary-btn" class="update-primary-btn" type="button" onclick="startUpdatePreviewDownload()">
-          <span id="update-btn-fill" class="update-btn-fill"></span>
-          <span id="update-btn-label" class="update-btn-label">立即更新</span>
-        </button>
-        <button class="update-secondary-btn" type="button" onclick="closeUpdatePanel()">取消</button>
-      </div>
-      <div id="update-footnote" class="update-footnote">预览版只演示更新手感，不会真的下载安装。</div>
     </div>
   </div>
 </div>
