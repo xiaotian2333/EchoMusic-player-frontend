@@ -352,8 +352,8 @@
 <div id="thumb-wrap">
   <img id="thumb-cover" src="" alt="">
   <div id="thumb-info">
-    <div id="thumb-title" onclick="openTrackDetailModal('song')" title="歌曲详情"></div>
-    <div id="thumb-artist" onclick="openTrackDetailModal('artist')" title="歌手详情"></div>
+    <div id="thumb-title"></div>
+    <div id="thumb-artist"></div>
   </div>
 </div>
 
@@ -434,8 +434,8 @@
       <div class="control-track">
         <div id="control-cover" class="control-cover cover-empty" aria-hidden="true"></div>
         <div class="control-meta">
-          <div id="control-title" class="control-title" onclick="openTrackDetailModal('song')" title="歌曲详情"></div>
-          <div id="control-artist" class="control-artist" onclick="openTrackDetailModal('artist')" title="歌手详情"></div>
+          <div id="control-title" class="control-title"></div>
+          <div id="control-artist" class="control-artist"></div>
         </div>
       </div>
     </div>
@@ -530,16 +530,6 @@
       <button class="modal-btn" onclick="deleteCustomLyricForCurrent()">删除</button>
       <button class="modal-btn" onclick="closeCustomLyricModal()">关闭</button>
       <button class="modal-btn primary" onclick="saveCustomLyricForCurrent()">保存使用</button>
-    </div>
-  </div>
-</div>
-
-<div id="track-detail-modal" class="modal-mask">
-  <div class="modal track-detail-modal">
-    <h2 id="track-detail-heading">歌曲详情</h2>
-    <div id="track-detail-body"></div>
-    <div class="btn-row">
-      <button class="modal-btn" onclick="closeTrackDetailModal()">关闭</button>
     </div>
   </div>
 </div>
