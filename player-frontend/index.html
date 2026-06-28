@@ -62,17 +62,6 @@
     </div>
     <div id="search-results"></div>
   </div>
-  <div id="upload-actions">
-    <button id="upload-btn" class="icon-btn" onclick="document.getElementById('file-input').click()" title="导入音乐或封面">
-      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    </button>
-    <button id="clear-cover-btn" class="icon-btn" onclick="clearCustomCoverForCurrent()" title="取消自定义封面" aria-label="取消自定义封面">×</button>
-    <div id="upload-tip" role="status" aria-live="polite">
-      <button class="upload-tip-close" onclick="closeUploadTip(true)" aria-label="关闭提示">×</button>
-      <span class="upload-tip-title">导入入口</span>
-      这里支持上传歌曲，也可以给当前曲目换自定义封面。
-    </div>
-  </div>
 </div>
 
 <button id="fx-fab" type="button" onclick="toggleFxPanel()" title="视觉控制台">
@@ -463,34 +452,9 @@
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".mp3,.flac,.wav,.ogg,.m4a,.jpg,.jpeg,.png,.webp" multiple style="display:none">
 <input type="file" id="background-image-input" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" style="display:none">
-<div id="drop-overlay"><div class="drop-text">拖放音乐或封面</div></div>
 <div id="free-camera-hint"><b>自由镜头</b> R 固定/退出 · WASD 移动 · 鼠标转向 · Shift 加速 · Space/Ctrl 升降 · Q/E 轻微旋转 · 滚轮景深 · K 回正</div>
 <div id="loading-overlay"><div class="spinner"></div></div>
-
-<!-- 封面裁剪模态 -->
-<div id="cover-crop-modal" class="modal-mask">
-  <div class="modal cover-crop-modal">
-    <h2>裁剪封面</h2>
-    <div class="cover-crop-layout">
-      <div id="cover-crop-stage" class="cover-crop-stage">
-        <img id="cover-crop-img" alt="">
-      </div>
-      <div class="cover-crop-side">
-        <canvas id="cover-crop-preview" width="160" height="160"></canvas>
-        <label class="cover-zoom-control">
-          <span>缩放</span>
-          <input id="cover-crop-zoom" type="range" min="1" max="3.2" step="0.01" value="1">
-        </label>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="modal-btn" onclick="closeCoverCropModal()">取消</button>
-      <button class="modal-btn primary" onclick="commitCoverCrop()">使用封面</button>
-    </div>
-  </div>
-</div>
 
 <div id="local-beat-modal" class="modal-mask">
   <div class="modal local-beat-modal">
