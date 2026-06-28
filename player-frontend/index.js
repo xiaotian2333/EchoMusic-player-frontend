@@ -1,3 +1,4 @@
+// ===== js/00-core-state.js =====
 'use strict';
 
 // ============================================================
@@ -66,6 +67,7 @@ function normalizeVisualPresetIndex(value, fallback) {
   return Math.round(clampRange(n, 0, MAX_VISUAL_PRESET_INDEX));
 }
 var diyPlayerMode = readDiyModePreference();
+var prefersReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 function isEchoPluginBridgeMode() {
   return !!(document.body && document.body.classList.contains('echo-plugin-bridge'));
 }
@@ -86,21 +88,6 @@ var collectTargetSong = null, collectBusy = false;
 var uploadTipTimer = null, uploadTipAttempts = 0;
 var visualGuideActive = false, visualGuideStep = 0, visualGuideResizeBound = false;
 var visualGuideState = { bottomWasVisible: false, searchWasPeek: false, manual: false };
-var emptyHomeActive = false;
-var homeForcedOpen = false;
-var homeSuppressed = false;
-var homeDiscoverState = { loading: false, loaded: false, loggedIn: false, mode: 'starter', songs: [], playlists: [], podcasts: [], error: '', updatedAt: 0 };
-var homeDiscoverToken = 0;
-var HOME_LISTEN_STATS_KEY = 'mineradio-listen-stats-v1';
-var HOME_WEATHER_CITY_KEY = 'mineradio-weather-city';
-var homeWeatherRadioState = { loading: false, loaded: false, city: localStorage.getItem(HOME_WEATHER_CITY_KEY) || '上海', weather: null, radio: null, error: '', updatedAt: 0 };
-var homeWeatherToken = 0;
-var homeWeatherLoadTimer = null;
-var homeWeatherLoadPromise = null;
-var weatherRadioStartBusy = false;
-var activeRadioContext = null;
-var listenStatsState = loadListenStatsState();
-var listenSession = null;
 var appPerfMarks = [];
 function markAppPerf(name) {
   try {
@@ -545,8 +532,6 @@ var fxDefaults = {
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
-  homeAccentColor: '#ffffff',
-  homeIconColor: '#ffffff',
   visualIconColor: '#ffffff',
   backgroundColorMode: 'cover',
   backgroundColor: '#000000',
@@ -618,8 +603,6 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
-  homeAccentColor: '#ffffff',
-  homeIconColor: '#ffffff',
   visualIconColor: '#ffffff',
   backgroundColorMode: 'cover',
   backgroundColor: '#000000',
@@ -1014,6 +997,10 @@ function installRenderPowerHooks() {
     }
   }
 }
+
+
+
+// ===== js/01-scene-camera-input.js =====
 
 // ============================================================
 //  Three.js 场景
@@ -2601,7 +2588,6 @@ function scheduleControlsHide(delay) {
 }
 
 function revealBottomControls(delay) {
-  if (document.body.classList.contains('home-controls-locked')) return;
   var bar = document.getElementById('bottom-bar');
   if (isBottomControlsSuppressedForShelf()) return;
   if (bar) bar.classList.add('visible');
@@ -2630,7 +2616,6 @@ function wakeBottomHandle(duration) {
 function forcePlaybackControlsInteractive() {
   if (!hasActivePlaybackControls()) return;
   try {
-    document.body.classList.remove('home-controls-locked');
     var bar = document.getElementById('bottom-bar');
     if (bar) {
       bar.style.pointerEvents = '';
@@ -2654,13 +2639,12 @@ function forcePlaybackControlsInteractive() {
 
 function toggleBottomControlsFromHandle() {
   var bar = document.getElementById('bottom-bar');
-  if (!bar || document.body.classList.contains('home-controls-locked')) return;
+  if (!bar) return;
   if (isBottomControlsSuppressedForShelf()) return;
   revealBottomControls(900);
 }
 
 function updateControlsAutoHideFromPointer(x, y) {
-  if (document.body.classList.contains('home-controls-locked')) return;
   if (isBottomControlsSuppressedForShelf()) return;
   var bar = document.getElementById('bottom-bar');
   if (!bar || !bar.classList.contains('visible')) return;
@@ -2812,7 +2796,7 @@ var particlePointerLocalHit = new THREE.Vector3();
 var particlePointerQuat = new THREE.Quaternion();
 var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
-var UI_HIT_SELECTOR = '#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#empty-home,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
+var UI_HIT_SELECTOR = '#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#fx-fab,#fx-fab-hide-btn,#playlist-panel,#bottom-bar,#thumb-wrap,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip,#drop-overlay';
 
 function isPointerOverUi(e) {
   if (!e) return false;
@@ -2975,6 +2959,10 @@ renderer.domElement.addEventListener('dblclick', function(e){
   }
   recenterCamera();
 });
+
+
+
+// ===== js/02-particle-systems.js =====
 
 // ============================================================
 //  粒子点纹理 (干净圆点, 无 glow)
@@ -4500,6 +4488,10 @@ function resetFloatColorsToIdle() {
   floatGroup.geometry.attributes.aColor.needsUpdate = true;
 }
 
+
+
+// ===== js/03-stage-lyrics.js =====
+
 // ============================================================
 //  舞台歌词系统 v9 — Three.js 文字平面, 跟随专辑粒子 3D 运动
 // ============================================================
@@ -4888,8 +4880,6 @@ function readSavedLyricLayout() {
       visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(raw.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(raw.uiAccentColor || '#00f5d4', '#00f5d4'),
-      homeAccentColor: normalizeHexColor(raw.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a'),
       visualIconColor: normalizeHexColor(raw.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
@@ -4965,8 +4955,6 @@ function saveLyricLayout() {
       visualTintMode: fx.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(fx.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4'),
-      homeAccentColor: normalizeHexColor(fx.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(fx.homeIconColor || '#f4d28a', '#f4d28a'),
       visualIconColor: normalizeHexColor(fx.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),
@@ -5337,8 +5325,6 @@ function applyColorLabValue(hex, silent) {
   var id = colorLabState.id;
   if (id === 'ui-accent-picker') setUiAccentColor(hex, true);
   else if (id === 'visual-tint-picker') setVisualTintCustom(hex, true);
-  else if (id === 'home-accent-picker') setHomeAccentColor(hex, true);
-  else if (id === 'home-icon-picker') setHomeIconColor(hex, true);
   else if (id === 'visual-icon-picker') setVisualIconColor(hex, true);
   else if (id === 'bg-color-picker') setCustomBackgroundColor(hex, true, true);
   else if (id === 'shelf-accent-picker') setShelfAccentColor(hex, true);
@@ -6645,6 +6631,9 @@ function disposeLyricsParticles() {
     stageLyrics.group = null;
   }
 }
+
+
+// ===== js/04-visual-analysis-beat.js =====
 
 // ============================================================
 //  涟漪触发系统 — 3×3 九宫格 + bass 上升沿
@@ -10052,6 +10041,10 @@ function commitCoverCrop() {
   closeCoverCropModal();
 }
 
+
+
+// ===== js/05-playlist-shelf.js =====
+
 // ============================================================
 //  3D 歌单架 — 双模式 (off / side / stage)
 //   - side:   现版本精修, 右侧 5 张卡微角度堆叠
@@ -10063,6 +10056,10 @@ var shelfManager = null;
 var shelfOpenAnimAt = -10;
 var shelfHoverCue = { target: 0, value: 0, x: 0, y: 0, lastAt: 0, enteredAt: 0, zoneActive: false, guide: false };
 var shelfVisibility = 0;  // 0..1, 侧栏自动隐藏的整体透明度系数
+function isShelfAppRevealed() {
+  // 迁移后的桥接入口没有旧版启动揭示流程，缺失时按已揭示处理。
+  return typeof appRevealed === 'undefined' ? true : !!appRevealed;
+}
 function isPortraitShelfViewport() {
   return innerHeight > innerWidth * 1.08;
 }
@@ -10141,8 +10138,7 @@ function shelfAutoHiddenInputReady() {
 function canShowShelfHoverCueAt(e) {
   if (!e) return false;
   if (!shelfHoverCue.guide) return false;
-  if (document.body.classList.contains('splash-active')) return false;
-  if (visualGuideActive || emptyHomeActive || homeForcedOpen) return false;
+  if (visualGuideActive) return false;
   if (!shelfManager || !shelfManager.getMode || shelfManager.getMode() !== 'side') return false;
   if (shelfPinnedOpen) return false;
   if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
@@ -10228,7 +10224,6 @@ function setShelfPinnedOpen(open, immediate) {
   var hint = document.getElementById('hint');
   if (hint) hint.classList.toggle('shelf-hidden', shelfPinnedOpen || !!(shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()));
   if (nextOpen && typeof setPeek === 'function') setPeek(document.getElementById('search-area'), false, 'search');
-  if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: false });
   if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return;
   if (typeof setFocusZone === 'function') setFocusZone(shelfPinnedOpen ? 'shelf-side' : null, immediate);
 }
@@ -10876,8 +10871,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         group.renderOrder = 50;
         scene.add(group);
       }
-      var asyncCards = mode === 'side' && document.body.classList.contains('splash-active');
-      rebuild(asyncCards);
+      rebuild(false);
     },
     getMode: function(){ return mode; },
     update: function(dt) {
@@ -10886,13 +10880,10 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       centerSmooth += (centerTarget - centerSmooth) * 0.16;
       if (Math.abs(centerSmooth - centerTarget) < 0.001) centerSmooth = centerTarget;
       var px = pointerParallax.x, py = pointerParallax.y;
-      var appRevealed = !document.body.classList.contains('splash-active');
       var cueVis = tickShelfHoverCue(dt);
-      // v8: shelf 自动可见度 — 启动页期间不显示；侧栏只在右侧停留时淡入。
+      // 侧栏只在右侧停留时淡入。
       var targetVis;
-      if (!appRevealed) {
-        targetVis = 0;
-      } else if (mode === 'side') {
+      if (mode === 'side') {
         var contentOpen = contentList && contentList.isOpen();
         if (!allItems.length && !contentOpen) targetVis = 0;
         else targetVis = (contentOpen || shelfPinnedOpen || shelfAlwaysVisible()) ? 1.0 : (cueVis > 0.01 ? Math.max(0.16, cueVis * 0.88) : 0);
@@ -10901,7 +10892,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       }
       shelfVisibility += (targetVis - shelfVisibility) * (targetVis > shelfVisibility ? 0.22 : 0.18);
       if (shelfVisibility < 0.01 && targetVis === 0) shelfVisibility = 0;
-      group.visible = appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
+      group.visible = isShelfAppRevealed() && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (floorMirror) floorMirror.visible = group.visible && mode === 'stage';
       if (mode === 'side') {
@@ -11002,7 +10993,6 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         openCardIdx = card ? card.index : -1;
         contentList.open(action.playlistId, action.title || (card && card.item.title), card);
         setShelfPinnedOpen(true, true);
-        if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: false });
         if (typeof setFocusZone === 'function') setFocusZone('shelf-detail', true);
       } else if (action.kind === 'empty') {
         togglePlaylistPanel(true);
@@ -11025,7 +11015,6 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         openCardIdx = card.index;
         contentList.open(action.playlistId, action.title || card.item.title, card);
         setShelfPinnedOpen(true, true);
-        if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: false });
         if (typeof setFocusZone === 'function') setFocusZone('shelf-detail', true);
       }
       if (action.kind === 'empty') togglePlaylistPanel(true);
@@ -11036,7 +11025,6 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       var hint = document.getElementById('hint');
       if (hint) hint.classList.toggle('shelf-hidden', shelfPinnedOpen);
       if (typeof setFocusZone === 'function') setFocusZone(shelfPinnedOpen ? 'shelf-side' : null, true);
-      if (typeof updateEmptyHomeVisibility === 'function') updateEmptyHomeVisibility({ forceLoad: false });
     },
     hasOpenContent: function() { return contentList && contentList.isOpen(); },
     getContentList: function() { return contentList; },
@@ -11915,7 +11903,7 @@ function makeContentListManager() {
       safeRenderQueuePanel('content-play-row');
       safeShelfRebuild('content-play-row');
       forcePlaybackControlsInteractive();
-      playQueueAt(playIndex, { preserveHomeState: true }).catch(function(e){
+      playQueueAt(playIndex).catch(function(e){
         console.warn('[ContentPlayRow]', e);
       });
       // 关闭内容框
@@ -12024,7 +12012,7 @@ function isSideShelfFocusHit(e) {
 }
 function updateShelfCardHoverSelection(e) {
   if (!shelfManager || !shelfManager.clearSelected || !shelfManager.setSelected) return;
-  if (!e || document.body.classList.contains('splash-active') || isPointerOverUi(e)) {
+  if (!e || isPointerOverUi(e)) {
     shelfManager.clearSelected();
     return;
   }
@@ -12068,7 +12056,6 @@ function isShelfPlaylistPlayHit(hit) {
 }
 renderer.domElement.addEventListener('click', function(e){
   if (!shelfManager || shelfManager.getMode() === 'off') return;
-  if (document.body.classList.contains('splash-active')) return;
   if (isPointerOverUi(e)) return;
   if (mouseDownAt.hadDrag) { mouseDownAt.hadDrag = false; return; }
 
@@ -12139,7 +12126,6 @@ renderer.domElement.addEventListener('click', function(e){
 });
 
 renderer.domElement.addEventListener('contextmenu', function(e){
-  if (document.body.classList.contains('splash-active')) return;
   if (isPointerOverUi(e)) return;
   e.preventDefault();
   e.stopPropagation();
@@ -12284,6 +12270,9 @@ window.addEventListener('blur', function(){
   if (freeCamera && freeCamera.keys) freeCamera.keys = {};
 });
 
+
+// ===== js/06-api-search.js =====
+
 // ============================================================
 //  API 助手
 // ============================================================
@@ -12418,7 +12407,6 @@ function applyPlaybackQualityToCurrentTrack(nextQuality) {
     qualityOverride: nextQuality || playbackQuality,
     qualitySwitch: true,
     resumeAt: resumeAt,
-    preserveHomeState: true,
   })).catch(function(e){
     console.warn('[QualitySwitch]', e);
     showToast('音质切换失败，已保留偏好');
@@ -12519,966 +12507,18 @@ function songCoverSrc(song, size) {
 function cssImageUrl(url) {
   return String(url || '').replace(/\\/g, '\\\\').replace(/"/g, '%22');
 }
-function setHomeArt(id, url, size) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  var src = url ? coverUrlWithSize(url, size || 260) : '';
-  el.style.backgroundImage = src ? 'url("' + cssImageUrl(src) + '")' : '';
-  el.classList.toggle('has-cover', !!src);
-  el.classList.toggle('home-skeleton', !src && homeDiscoverState.loading);
-}
-function compactHomeCount(n) {
-  n = Number(n) || 0;
-  if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '亿';
-  if (n >= 10000) return Math.round(n / 10000) + '万';
-  return n ? String(n) : '';
-}
-function loadListenStatsState() {
-  try {
-    var raw = localStorage.getItem(HOME_LISTEN_STATS_KEY);
-    if (!raw) return { history: [], songs: {}, artists: {}, updatedAt: 0 };
-    var data = JSON.parse(raw);
-    return {
-      history: Array.isArray(data.history) ? data.history.slice(0, 180) : [],
-      songs: data.songs && typeof data.songs === 'object' ? data.songs : {},
-      artists: data.artists && typeof data.artists === 'object' ? data.artists : {},
-      updatedAt: Number(data.updatedAt) || 0,
-    };
-  } catch (e) {
-    return { history: [], songs: {}, artists: {}, updatedAt: 0 };
-  }
-}
-function saveListenStatsState() {
-  try {
-    listenStatsState.updatedAt = Date.now();
-    localStorage.setItem(HOME_LISTEN_STATS_KEY, JSON.stringify(listenStatsState));
-  } catch (e) {}
-}
-function listenSongSnapshot(song) {
-  song = song || {};
-  return {
-    key: queueItemKey(song),
-    id: song.id || '',
-    mid: song.mid || song.songmid || '',
-    mediaMid: song.mediaMid || song.media_mid || '',
-    type: song.type || 'song',
-    sourceKey: song.source || song.provider || '',
-    name: song.name || song.title || '未知歌曲',
-    artist: song.artist || '',
-    cover: songCoverSrc(song, 220) || song.cover || '',
-    source: songSourceLabel(song),
-    provider: song.provider || song.source || song.type || '',
-    duration: Number(song.duration) || 0,
-  };
-}
-function beginListenSession(song, context) {
-  if (!song) return;
-  var snap = listenSongSnapshot(song);
-  if (!snap.key) return;
-  if (listenSession && listenSession.key !== snap.key) finalizeListenSession(false);
-  listenSession = {
-    key: snap.key,
-    song: snap,
-    context: context || activeRadioContext || null,
-    startedAt: Date.now(),
-    lastWallAt: Date.now(),
-    lastAudioTime: audio && isFinite(audio.currentTime) ? audio.currentTime : 0,
-    listenMs: 0,
-    maxProgress: 0,
-  };
-}
-function updateListenStatsTick(force) {
-  if (!audio || !audio.duration || audio.paused) return;
-  var song = currentCoverSong();
-  if (!song) return;
-  var key = queueItemKey(song);
-  if (!listenSession || listenSession.key !== key) beginListenSession(song, activeRadioContext);
-  if (!listenSession) return;
-  var now = Date.now();
-  var audioTime = isFinite(audio.currentTime) ? audio.currentTime : 0;
-  var deltaByAudio = Math.max(0, audioTime - (listenSession.lastAudioTime || 0)) * 1000;
-  var deltaByWall = Math.max(0, now - (listenSession.lastWallAt || now));
-  var delta = deltaByAudio > 0 ? Math.min(deltaByAudio, deltaByWall || deltaByAudio, 4200) : 0;
-  if (force && delta <= 0) delta = Math.min(deltaByWall, 1500);
-  if (delta > 0 && delta < 8000) listenSession.listenMs += delta;
-  listenSession.lastWallAt = now;
-  listenSession.lastAudioTime = audioTime;
-  listenSession.maxProgress = Math.max(listenSession.maxProgress || 0, audio.duration ? audioTime / audio.duration : 0);
-}
-function finalizeListenSession(completed) {
-  if (!listenSession) return;
-  updateListenStatsTick(true);
-  var session = listenSession;
-  listenSession = null;
-  var effective = completed || session.listenMs >= 45000 || session.maxProgress >= 0.5 || (!audio || !audio.duration ? session.listenMs >= 30000 : false);
-  if (!effective) return;
-  var now = Date.now();
-  var snap = session.song || {};
-  var record = {
-    key: session.key,
-    id: snap.id || '',
-    mid: snap.mid || '',
-    mediaMid: snap.mediaMid || '',
-    type: snap.type || 'song',
-    sourceKey: snap.sourceKey || '',
-    name: snap.name || '未知歌曲',
-    artist: snap.artist || '',
-    cover: snap.cover || '',
-    source: snap.source || '',
-    playedAt: now,
-    listenMs: Math.round(session.listenMs),
-    completed: !!completed,
-    context: session.context || null,
-  };
-  listenStatsState.history = [record].concat((listenStatsState.history || []).filter(function(item){ return item && item.key !== record.key; })).slice(0, 180);
-  var songStat = listenStatsState.songs[record.key] || { key: record.key, name: record.name, artist: record.artist, cover: record.cover, source: record.source, plays: 0, listenMs: 0, completed: 0, lastPlayedAt: 0 };
-  songStat.name = record.name;
-  songStat.artist = record.artist;
-  songStat.cover = record.cover || songStat.cover || '';
-  songStat.source = record.source || songStat.source || '';
-  songStat.plays += 1;
-  songStat.listenMs += record.listenMs;
-  songStat.completed += completed ? 1 : 0;
-  songStat.lastPlayedAt = now;
-  listenStatsState.songs[record.key] = songStat;
-  String(record.artist || '').split(/\s*\/\s*|\s*,\s*|、|&/).forEach(function(name){
-    name = name.trim();
-    if (!name) return;
-    var artistStat = listenStatsState.artists[name] || { name: name, plays: 0, listenMs: 0, lastPlayedAt: 0 };
-    artistStat.plays += 1;
-    artistStat.listenMs += record.listenMs;
-    artistStat.lastPlayedAt = now;
-    listenStatsState.artists[name] = artistStat;
-  });
-  saveListenStatsState();
-  if (emptyHomeActive) renderHomeDiscover();
-}
-function mostPlayedSong() {
-  var list = Object.keys(listenStatsState.songs || {}).map(function(key){ return listenStatsState.songs[key]; });
-  list.sort(function(a, b){ return (b.plays - a.plays) || (b.listenMs - a.listenMs) || (b.lastPlayedAt - a.lastPlayedAt); });
-  return list[0] || null;
-}
-function topListenArtist() {
-  var list = Object.keys(listenStatsState.artists || {}).map(function(key){ return listenStatsState.artists[key]; });
-  list.sort(function(a, b){ return (b.plays - a.plays) || (b.listenMs - a.listenMs) || (b.lastPlayedAt - a.lastPlayedAt); });
-  return list[0] || null;
-}
-function homeListenSummary() {
-  var recent = (listenStatsState.history || [])[0] || null;
-  var topSong = mostPlayedSong();
-  var topArtist = topListenArtist();
-  var totalPlays = Object.keys(listenStatsState.songs || {}).reduce(function(sum, key){ return sum + ((listenStatsState.songs[key] && listenStatsState.songs[key].plays) || 0); }, 0);
-  return { recent: recent, topSong: topSong, topArtist: topArtist, totalPlays: totalPlays };
-}
-function fallbackHomeTiles() {
-  return [
-    { kind: 'login', title: '登录同步歌单', sub: '网易云 / QQ 音乐' },
-    { kind: 'search', title: '搜索一首歌', sub: '原唱优先', query: '' },
-    { kind: 'local', title: '导入本地音乐', sub: '本地文件也能可视化' },
-    { kind: 'podcastSearch', title: '搜索播客', sub: '长内容 / 电台' },
-    { kind: 'guide', title: '看看视觉舞台', sub: '粒子 / 歌词 / 封面' },
-  ];
-}
-function homeTileCover(item) {
-  if (!item) return '';
-  if (item.kind === 'song' || item.kind === 'weatherSong') return songCoverSrc(item.song, 220);
-  return item.cover ? coverUrlWithSize(item.cover, 220) : '';
-}
-function homeToneForItem(item, index) {
-  if (!item) return 'daily';
-  if (item.kind === 'weatherSong') return 'daily';
-  if (item.kind === 'recent') return 'search';
-  if (item.kind === 'profile') return 'local';
-  if (item.tone) return item.tone;
-  if (item.kind === 'song') return index % 2 ? 'search' : 'daily';
-  if (item.kind === 'playlist') return 'playlist';
-  if (item.kind === 'podcast' || item.kind === 'podcastSearch') return 'podcast';
-  if (item.kind === 'local') return 'local';
-  if (item.kind === 'guide') return 'guide';
-  if (item.kind === 'login') return 'library';
-  if (item.kind === 'search') return 'search';
-  return ['daily', 'playlist', 'local', 'guide', 'search'][index % 5];
-}
-function renderHomeMosaic(items) {
-  var cells = document.querySelectorAll('#home-mosaic .home-mosaic-cell');
-  if (!cells.length) return;
-  var covers = [];
-  (items || []).forEach(function(item){
-    var cover = homeTileCover(item);
-    if (cover) covers.push(cover);
-  });
-  for (var i = 0; i < cells.length; i++) {
-    var src = covers[i] || covers[(i + 1) % Math.max(1, covers.length)] || '';
-    cells[i].style.backgroundImage = src ? 'url("' + cssImageUrl(src) + '")' : '';
-    cells[i].classList.toggle('has-cover', !!src);
-    cells[i].classList.toggle('home-skeleton', !src && homeDiscoverState.loading);
-  }
-}
-function renderHomeTiles() {
-  var row = document.getElementById('home-tile-row');
-  var title = document.getElementById('home-rail-title');
-  var note = document.getElementById('home-rail-note');
-  if (!row) return;
-  var tiles = [];
-  var loggedOutHome = !homeDiscoverState.loggedIn && !hasAnyPlatformLogin();
-  var weatherSongs = homeWeatherRadioState.radio && homeWeatherRadioState.radio.songs || [];
-  var summary = homeListenSummary();
-  if (summary.recent && tiles.length < 5) {
-    tiles.push({ kind: 'recent', title: summary.recent.name || '继续听', sub: summary.recent.artist || summary.recent.source || '', cover: summary.recent.cover, record: summary.recent });
-  }
-  if (summary.topArtist && tiles.length < 5) {
-    tiles.push({ kind: 'profile', title: summary.topArtist.name, sub: '常听歌手 · ' + summary.topArtist.plays + ' 次', query: summary.topArtist.name });
-  }
-  if (!loggedOutHome) {
-    homeDiscoverState.songs.slice(0, Math.max(0, 4 - tiles.length)).forEach(function(song, i){
-      tiles.push({ kind: 'song', index: i, song: song, title: song.name || '今日歌曲', sub: song.artist || songSourceLabel(song) });
-    });
-    homeDiscoverState.playlists.slice(0, Math.max(0, 5 - tiles.length)).forEach(function(pl, i){
-      tiles.push({ kind: 'playlist', index: i, title: pl.name || '推荐歌单', sub: (pl.trackCount ? pl.trackCount + ' 首' : 'Playlist') + (pl.playCount ? ' · ' + compactHomeCount(pl.playCount) + ' 播放' : ''), cover: pl.cover });
-    });
-    if (tiles.length < 5) {
-      homeDiscoverState.podcasts.slice(0, 5 - tiles.length).forEach(function(p, i){
-        tiles.push({ kind: 'podcast', index: i, title: p.name || '热门播客', sub: p.djName || p.category || 'Podcast', cover: p.cover });
-      });
-    }
-  }
-  if (tiles.length < 5) {
-    weatherSongs.slice(0, 5 - tiles.length).forEach(function(song, i){
-      tiles.push({ kind: 'weatherSong', index: i, song: song, title: song.name || '天气电台歌曲', sub: song.artist || songSourceLabel(song) });
-    });
-  }
-  if (!tiles.length) tiles = fallbackHomeTiles();
-  tiles = tiles.slice(0, 5);
-  if (title) title.textContent = summary.recent ? '接着听' : (loggedOutHome ? '先从这里开始' : '你的歌单与推荐');
-  if (note) {
-    var liveNote = homeDiscoverState.updatedAt ? '刚刚更新 · 点击即可播放' : '点击即可播放';
-    note.textContent = homeDiscoverState.loading ? '正在整理推荐' : (loggedOutHome && !weatherSongs.length ? '不会自动拉取外部推荐' : (homeDiscoverState.error ? '离线精选' : liveNote));
-  }
-  row.innerHTML = tiles.map(function(item, i){
-    var cover = homeTileCover(item);
-    var tone = homeToneForItem(item, i);
-    var coverClass = 'home-tile-cover' + (cover ? ' has-cover' : '');
-    return '<button class="home-tile' + (!cover && homeDiscoverState.loading ? ' home-skeleton' : '') + '" data-home-tone="' + escHtml(tone) + '" type="button" onclick="handleHomeTileClick(' + i + ')">' +
-      '<div class="' + coverClass + '" style="' + (cover ? 'background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
-      '<div class="home-tile-title">' + escHtml(item.title || '') + '</div>' +
-      '<div class="home-tile-sub">' + escHtml(item.sub || '') + '</div>' +
-    '</button>';
-  }).join('');
-  row._homeTiles = tiles;
-  renderHomeMosaic(tiles);
-}
-function renderHomeDiscover() {
-  var sub = document.getElementById('home-subtitle');
-  var loggedOutHome = !homeDiscoverState.loggedIn && !hasAnyPlatformLogin();
-  var weather = homeWeatherRadioState.weather;
-  var radio = homeWeatherRadioState.radio;
-  var weatherLocation = weather && weather.location && weather.location.name || homeWeatherRadioState.city || '上海';
-  var weatherTitle = document.getElementById('home-weather-title');
-  var weatherKicker = document.getElementById('home-weather-kicker');
-  var weatherMeta = document.getElementById('home-weather-meta');
-  if (weatherTitle) weatherTitle.textContent = '我的音乐库';
-  if (weatherKicker) weatherKicker.textContent = 'Mineradio · Your Library';
-  if (sub) {
-    if (loggedOutHome) sub.textContent = '登录后会把你的歌单、常听歌手和最近播放放在这里；也可以直接搜索或导入本地音乐。';
-    else sub.textContent = '从你的歌单、最近播放和常听歌手开始，天气电台放在需要氛围的时候再开。';
-  }
-  if (weatherMeta) {
-    var meta = [];
-    if (weather) {
-      meta.push(weatherLocation);
-      meta.push(weather.label + ' · ' + Math.round(weather.temperature || 0) + '°');
-      meta.push('体感 ' + Math.round(weather.apparentTemperature || weather.temperature || 0) + '°');
-      if (isFinite(weather.humidity)) meta.push('湿度 ' + Math.round(weather.humidity) + '%');
-    } else {
-      meta.push(weatherLocation);
-      meta.push(homeWeatherRadioState.error ? '天气暂不可用' : '正在整理天气');
-    }
-    weatherMeta.innerHTML = meta.map(function(text){ return '<span class="home-weather-pill">' + escHtml(text) + '</span>'; }).join('');
-  }
-  var daily = homeDiscoverState.songs[0] || null;
-  var cardSongB = homeDiscoverState.songs[1] || null;
-  var cardSongC = homeDiscoverState.songs[2] || null;
-  var playlistItem = homeDiscoverState.playlists[0] || null;
-  var podcastItem = homeDiscoverState.podcasts[0] || null;
-  var summary = homeListenSummary();
-  var weatherCardTitle = document.getElementById('home-weather-card-title');
-  var weatherCardSub = document.getElementById('home-weather-card-sub');
-  var dailyTitle = document.getElementById('home-daily-title');
-  var dailySub = document.getElementById('home-daily-sub');
-  var privateTitle = document.getElementById('home-private-title');
-  var privateSub = document.getElementById('home-private-sub');
-  var continueTitle = document.getElementById('home-continue-title');
-  var continueSub = document.getElementById('home-continue-sub');
-  var profileTitle = document.getElementById('home-profile-title');
-  var profileSub = document.getElementById('home-profile-sub');
-  var libTitle = document.getElementById('home-library-title');
-  var libSub = document.getElementById('home-library-sub');
-  if (weatherCardTitle) weatherCardTitle.textContent = '我的歌单';
-  if (weatherCardSub) {
-    weatherCardSub.textContent = playlistItem ? (((playlistItem.trackCount || 0) ? playlistItem.trackCount + ' 首 · ' : '') + (playlistItem.creator || '打开左侧歌单库')) : '打开左侧歌单库';
-  }
-  if (continueTitle) continueTitle.textContent = summary.recent ? summary.recent.name : '继续听';
-  if (continueSub) continueSub.textContent = summary.recent ? (summary.recent.artist || summary.recent.source || '最近播放') : '最近播放会出现在这里';
-  if (profileTitle) profileTitle.textContent = summary.topArtist ? summary.topArtist.name : (summary.topSong ? summary.topSong.name : '听歌画像');
-  if (profileSub) profileSub.textContent = summary.topArtist ? ('常听歌手 · ' + summary.topArtist.plays + ' 次') : (summary.totalPlays ? summary.totalPlays + ' 次有效播放' : '播放几首后生成偏好');
-  if (loggedOutHome) {
-    if (dailyTitle) dailyTitle.textContent = '每日推荐';
-    if (dailySub) dailySub.textContent = '登录后同步你的今日歌曲';
-    if (privateTitle) privateTitle.textContent = '推荐歌曲';
-    if (privateSub) privateSub.textContent = '登录后同步更多歌曲';
-    if (libTitle) libTitle.textContent = '更多歌曲';
-    if (libSub) libSub.textContent = '播放后会继续补全推荐';
-    setHomeArt('home-weather-art', '', 280);
-    setHomeArt('home-daily-art', '', 280);
-    setHomeArt('home-private-art', '', 280);
-    setHomeArt('home-continue-art', summary.recent && summary.recent.cover, 280);
-    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover, 280);
-    setHomeArt('home-library-art', '', 280);
-  } else {
-    if (dailyTitle) dailyTitle.textContent = daily ? daily.name : '每日推荐';
-    if (dailySub) dailySub.textContent = daily ? ((daily.artist || songSourceLabel(daily) || '今日歌曲') + ' · 点击播放今日队列') : '同步你的今日歌曲';
-    if (privateTitle) privateTitle.textContent = cardSongB ? cardSongB.name : '私人雷达';
-    if (privateSub) privateSub.textContent = cardSongB ? (cardSongB.artist || songSourceLabel(cardSongB) || '推荐歌曲') : (homeDiscoverState.songs.length + ' 首 · 根据今日推荐与常听偏好');
-    if (libTitle) libTitle.textContent = cardSongC ? cardSongC.name : (summary.topArtist ? summary.topArtist.name : '更多歌曲');
-    if (libSub) libSub.textContent = cardSongC ? (cardSongC.artist || songSourceLabel(cardSongC) || '推荐歌曲') : (summary.topArtist ? ('歌手偏好 · ' + summary.topArtist.plays + ' 次') : '播放几首后生成你的偏好');
-    setHomeArt('home-weather-art', (userPlaylists[0] && userPlaylists[0].cover) || (playlistItem && playlistItem.cover) || daily && daily.cover, 280);
-    setHomeArt('home-daily-art', daily && daily.cover, 280);
-    setHomeArt('home-private-art', cardSongB && cardSongB.cover || daily && daily.cover || summary.recent && summary.recent.cover || playlistItem && playlistItem.cover, 280);
-    setHomeArt('home-continue-art', summary.recent && summary.recent.cover || playlistItem && playlistItem.cover, 280);
-    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || podcastItem && podcastItem.cover, 280);
-    setHomeArt('home-library-art', cardSongC && cardSongC.cover || summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover || podcastItem && podcastItem.cover, 280);
-  }
-  renderHomeTiles();
-}
-async function loadHomeDiscover(force) {
-  if (homeDiscoverState.loading) return;
-  if (homeDiscoverState.loaded && !force) return;
-  var token = ++homeDiscoverToken;
-  homeDiscoverState.loading = true;
-  homeDiscoverState.error = '';
-  renderHomeDiscover();
-  try {
-    var data = await apiJson('/api/discover/home?t=' + Date.now());
-    if (token !== homeDiscoverToken) return;
-    homeDiscoverState.loggedIn = !!(data && data.loggedIn);
-    homeDiscoverState.mode = data && data.mode || (homeDiscoverState.loggedIn ? 'member' : 'starter');
-    homeDiscoverState.songs = homeDiscoverState.loggedIn ? (data && data.dailySongs || []).map(cloneSong) : [];
-    homeDiscoverState.playlists = homeDiscoverState.loggedIn ? (data && data.playlists || []) : [];
-    homeDiscoverState.podcasts = homeDiscoverState.loggedIn ? (data && data.podcasts || []) : [];
-    homeDiscoverState.updatedAt = Number(data && data.updatedAt) || Date.now();
-    homeDiscoverState.loaded = true;
-  } catch (e) {
-    console.warn('home discover failed:', e);
-    if (token === homeDiscoverToken) homeDiscoverState.error = 'DISCOVER_FAILED';
-  } finally {
-    if (token === homeDiscoverToken) {
-      homeDiscoverState.loading = false;
-      renderHomeDiscover();
-    }
-  }
-}
-function homeWeatherRadioUrl(opts) {
-  opts = opts || {};
-  var params = [];
-  if (opts.lat != null && opts.lon != null) {
-    params.push('lat=' + encodeURIComponent(opts.lat));
-    params.push('lon=' + encodeURIComponent(opts.lon));
-    params.push('city=' + encodeURIComponent(opts.city || '当前位置'));
-  } else {
-    params.push('city=' + encodeURIComponent(opts.city || homeWeatherRadioState.city || '上海'));
-  }
-  params.push('timezone=' + encodeURIComponent(opts.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'auto'));
-  params.push('t=' + Date.now());
-  return '/api/weather/radio?' + params.join('&');
-}
-async function loadHomeWeatherRadio(force, opts) {
-  opts = opts || {};
-  if (homeWeatherRadioState.loading && homeWeatherLoadPromise && opts.lat == null && opts.lon == null && !opts.city) {
-    return homeWeatherLoadPromise;
-  }
-  if (homeWeatherRadioState.loading && !force) return homeWeatherRadioState;
-  if (homeWeatherRadioState.loaded && !force && !opts.lat) return homeWeatherRadioState;
-  var token = ++homeWeatherToken;
-  homeWeatherRadioState.loading = true;
-  homeWeatherRadioState.error = '';
-  renderHomeDiscover();
-  var loadPromise = (async function(){
-    try {
-      var data = await apiJson(homeWeatherRadioUrl(opts), { timeoutMs: 14000 });
-      if (token !== homeWeatherToken) return homeWeatherRadioState;
-      homeWeatherRadioState.weather = data && data.weather || null;
-      homeWeatherRadioState.radio = data && data.radio || null;
-      homeWeatherRadioState.loaded = true;
-      homeWeatherRadioState.updatedAt = Date.now();
-      if (homeWeatherRadioState.weather && homeWeatherRadioState.weather.location && homeWeatherRadioState.weather.location.name) {
-        homeWeatherRadioState.city = homeWeatherRadioState.weather.location.name;
-        localStorage.setItem(HOME_WEATHER_CITY_KEY, homeWeatherRadioState.city);
-      } else if (opts.city) {
-        homeWeatherRadioState.city = opts.city;
-        localStorage.setItem(HOME_WEATHER_CITY_KEY, homeWeatherRadioState.city);
-      }
-    } catch (e) {
-      console.warn('weather radio failed:', e);
-      if (token === homeWeatherToken) homeWeatherRadioState.error = 'WEATHER_FAILED';
-    } finally {
-      if (token === homeWeatherToken) {
-        homeWeatherRadioState.loading = false;
-        renderHomeDiscover();
-      }
-    }
-    return homeWeatherRadioState;
-  })();
-  homeWeatherLoadPromise = loadPromise;
-  try {
-    return await loadPromise;
-  } finally {
-    if (homeWeatherLoadPromise === loadPromise) homeWeatherLoadPromise = null;
-  }
-}
-function scheduleHomeWeatherLoad(delay) {
-  if (homeWeatherLoadTimer) return;
-  homeWeatherLoadTimer = setTimeout(function(){
-    homeWeatherLoadTimer = null;
-    if (!emptyHomeActive) return;
-    loadHomeWeatherRadio(false);
-  }, delay || 760);
-}
-function weatherRadioContext() {
-  var weather = homeWeatherRadioState.weather || {};
-  var radio = homeWeatherRadioState.radio || {};
-  return {
-    type: 'weather-radio',
-    provider: 'open-meteo',
-    title: radio.title || '天气电台',
-    location: weather.location && weather.location.name || homeWeatherRadioState.city || '',
-    weather: weather.label || '',
-    temperature: weather.temperature,
-    mood: weather.mood && weather.mood.key || '',
-  };
-}
-async function startWeatherRadio(opts) {
-  opts = opts || {};
-  if (weatherRadioStartBusy) return;
-  weatherRadioStartBusy = true;
-  try {
-  if (!homeWeatherRadioState.loaded || !(homeWeatherRadioState.radio && homeWeatherRadioState.radio.songs && homeWeatherRadioState.radio.songs.length)) {
-    showToast('正在生成天气电台');
-    await loadHomeWeatherRadio(true);
-  }
-  var radio = homeWeatherRadioState.radio;
-  if (!radio || !radio.songs || !radio.songs.length) {
-    var seed = radio && radio.seedQueries && radio.seedQueries[0] || '雨天 R&B';
-    showToast('天气队列暂时为空，先打开搜索');
-    runHomeSearch(seed);
-    return;
-  }
-  activeRadioContext = weatherRadioContext();
-  playQueue = radio.songs.map(function(song){
-    var cloned = cloneSong(song);
-    cloned.radioContext = activeRadioContext;
-    return cloned;
-  });
-  currentIdx = 0;
-  homeForcedOpen = false;
-  if (!opts.preserveHomeState) homeSuppressed = false;
-  setHomeControlsLocked(false);
-  safeRenderQueuePanel('weather-radio-start');
-  safeShelfRebuild('weather-radio-start', true);
-  forcePlaybackControlsInteractive();
-  try {
-    await playQueueAt(0, { context: activeRadioContext });
-  } catch (e) {
-    console.warn('[WeatherRadioStartPlay]', e);
-    showToast('天气电台已载入，播放启动失败');
-  }
-  forcePlaybackControlsInteractive();
-  showToast((radio.title || '天气电台') + ' · ' + playQueue.length + ' 首');
-  } finally {
-    weatherRadioStartBusy = false;
-  }
-}
-var emptyHomeStartEl = document.getElementById('empty-home');
-if (emptyHomeStartEl) {
-  emptyHomeStartEl.addEventListener('click', function(e){
-    var start = e.target && e.target.closest ? e.target.closest('[data-home-radio-start]') : null;
-    if (!start || !emptyHomeStartEl.contains(start)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    startWeatherRadio();
-  }, true);
-}
-function locateWeatherRadio() {
-  var previousWeatherCity = homeWeatherRadioState.city || '上海';
-  homeWeatherToken++;
-  homeWeatherRadioState.loading = true;
-  homeWeatherRadioState.loaded = false;
-  homeWeatherRadioState.error = '';
-  homeWeatherRadioState.weather = null;
-  homeWeatherRadioState.radio = null;
-  homeWeatherRadioState.city = '定位中';
-  renderHomeDiscover();
-  var locationSettled = false;
-  var ipFallbackStarted = false;
-  function useIpFallback() {
-    if (locationSettled || ipFallbackStarted) return;
-    ipFallbackStarted = true;
-    apiJson('/api/weather/ip-location?t=' + Date.now()).then(function(data){
-      var loc = data && data.location;
-      if (!loc || !isFinite(Number(loc.latitude)) || !isFinite(Number(loc.longitude))) throw new Error(data && data.error || 'IP_LOCATION_FAILED');
-      if (locationSettled) return;
-      locationSettled = true;
-      homeWeatherRadioState.city = loc.city || '当前位置';
-      localStorage.setItem(HOME_WEATHER_CITY_KEY, homeWeatherRadioState.city);
-      renderHomeDiscover();
-      showToast('已用网络位置定位到 ' + (loc.city || '当前位置'));
-      loadHomeWeatherRadio(true, {
-        lat: loc.latitude,
-        lon: loc.longitude,
-        city: loc.city || '当前位置',
-        timezone: loc.timezone || '',
-      });
-    }).catch(function(e){
-      console.warn('weather ip location failed:', e);
-      if (locationSettled) return;
-      homeWeatherRadioState.loading = false;
-      homeWeatherRadioState.error = 'LOCATION_FAILED';
-      homeWeatherRadioState.city = previousWeatherCity;
-      renderHomeDiscover();
-      showToast('定位不可用，可以手动换城市');
-    });
-  }
-  // Desktop users need a stable city label; browser coordinates can be stale or cityless.
-  useIpFallback();
-}
-function changeWeatherCity() {
-  var city = window.prompt('输入城市名', homeWeatherRadioState.city || '上海');
-  city = String(city || '').trim();
-  if (!city) return;
-  homeWeatherRadioState.city = city;
-  localStorage.setItem(HOME_WEATHER_CITY_KEY, city);
-  homeWeatherRadioState.loaded = false;
-  loadHomeWeatherRadio(true, { city: city });
-}
-function shouldShowEmptyHomeCore(ignoreSplash) {
-  if (!ignoreSplash && document.body.classList.contains('splash-active')) return false;
-  if (immersiveMode) return false;
-  if (homeForcedOpen) return true;
-  if (homeSuppressed) return false;
-  if (shelfPinnedOpen) return false;
-  if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-  if (playQueue && playQueue.length) return false;
-  if (currentIdx >= 0 && playQueue[currentIdx]) return false;
-  if (playing) return false;
-  return true;
-}
-function shouldShowEmptyHome() {
-  return shouldShowEmptyHomeCore(false);
-}
-function shouldShowEmptyHomeAfterSplash() {
-  return shouldShowEmptyHomeCore(true);
-}
-function shouldForceEmptyHomeAfterSplash() {
-  if (immersiveMode) return false;
-  if (shelfPinnedOpen) return false;
-  if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-  if (playQueue && playQueue.length) return false;
-  if (currentIdx >= 0 && playQueue[currentIdx]) return false;
-  if (playing) return false;
-  return true;
-}
-function setHomeControlsLocked(locked) {
-  document.body.classList.toggle('home-controls-locked', !!locked);
-  var bottom = document.getElementById('bottom-bar');
-  if (bottom && locked && !hasActivePlaybackControls()) bottom.classList.add('soft-hidden');
-  if (bottom && !locked) bottom.classList.remove('soft-hidden');
-  if (locked) closeMiniQueue();
-}
-function openHomePlayerConsole() {
-  setHomeControlsLocked(false);
-  var bar = document.getElementById('bottom-bar');
-  if (bar) {
-    bar.classList.add('visible');
-    bar.classList.remove('soft-hidden');
-    bar.style.pointerEvents = '';
-  }
-  wakeBottomHandle(2800);
-  setControlsHidden(false);
-  forcePlaybackControlsInteractive();
-  updateControlsChromeState();
-  if (controlsAutoHide) scheduleControlsHide(1800);
-  showToast('播放器控制台已展开');
-}
-function switchPlaybackVisualToEmily() {
-  var targetPreset = typeof playbackVisualPreset === 'number' ? playbackVisualPreset : DEFAULT_PLAYBACK_VISUAL_PRESET;
-  if (typeof setPreset === 'function' && fx.preset !== targetPreset) {
-    setPreset(targetPreset, { silent: true, preserveCamera: false, noSave: true });
-  } else if (typeof syncFxUniforms === 'function') {
-    syncFxUniforms();
-  }
-}
-function updateEmptyHomeVisibility(opts) {
-  opts = opts || {};
-  var show = shouldShowEmptyHome();
-  emptyHomeActive = show;
-  document.body.classList.toggle('empty-home-active', show);
-  if (!show) setHomeControlsLocked(false);
-  if (show) revealUserPresetParticles({ duration: 920 });
-  if (show) {
-    setPeek(document.getElementById('search-area'), true, 'search');
-    renderHomeDiscover();
-    scheduleHomeWeatherLoad(opts.forceLoad ? 1400 : 2400);
-    if (!hasAnyPlatformLogin()) {
-      homeDiscoverState.loading = false;
-      homeDiscoverState.loaded = true;
-      homeDiscoverState.loggedIn = false;
-      homeDiscoverState.mode = 'starter';
-      homeDiscoverState.songs = [];
-      homeDiscoverState.playlists = [];
-      homeDiscoverState.podcasts = [];
-      renderHomeDiscover();
-    } else {
-      renderHomeDiscover();
-      scheduleVisualApply(function(){ loadHomeDiscover(!!opts.forceLoad); }, 220, 1200);
-    }
-  }
-  return show;
-}
-function runHomeSearch(query, mode) {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  updateEmptyHomeVisibility();
-  if (mode) setSearchMode(mode);
-  else if (searchMode === 'podcast') setSearchMode('song');
-  var q = String(query || '').trim();
-  var area = document.getElementById('search-area');
-  if (area) setPeek(area, true, 'search');
-  if ($input) {
-    $input.value = q;
-    $input.focus();
-  }
-  if (q) doSearch(q);
-  else if (searchMode === 'podcast') loadPodcastHot();
-  else renderSearchHistory();
-}
 function skipLoginAndFocusSearch() {
   closeLoginModal();
-  setTimeout(function(){ runHomeSearch(''); }, 180);
-}
-function openHomeLocalImport() {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  updateEmptyHomeVisibility();
-  var input = document.getElementById('file-input');
-  if (input) input.click();
-}
-function openHomeProductGuide() {
-  closeLoginModal();
-  setTimeout(function(){ startVisualGuide({ manual: true, source: 'home' }); }, 160);
-}
-async function waitForHomeDiscoverIdle(timeout) {
-  var started = Date.now();
-  while (homeDiscoverState.loading && Date.now() - started < (timeout || 2200)) {
-    await new Promise(function(resolve){ setTimeout(resolve, 80); });
-  }
-}
-async function playHomeDaily() {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  if (!hasAnyPlatformLogin() && !homeDiscoverState.loggedIn) {
-    showLoginModal({ source: 'home-daily' });
-    return;
-  }
-  await waitForHomeDiscoverIdle();
-  if (!homeDiscoverState.loaded || (!homeDiscoverState.songs.length && !homeDiscoverState.loading)) {
-    await loadHomeDiscover(true);
-  }
-  if (!homeDiscoverState.songs.length) {
-    runHomeSearch('每日推荐');
-    return;
-  }
-  playQueue = homeDiscoverState.songs.map(cloneSong);
-  currentIdx = 0;
-  safeRenderQueuePanel('home-daily');
-  safeShelfRebuild('home-daily', true);
-  forcePlaybackControlsInteractive();
-  playQueueAt(0).catch(function(e){ console.warn('[HomeDailyPlay]', e); });
-}
-async function playHomePrivateRadio() {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  if (!hasAnyPlatformLogin() && !homeDiscoverState.loggedIn) {
-    showLoginModal({ source: 'home-private' });
-    return;
-  }
-  await waitForHomeDiscoverIdle();
-  if (!homeDiscoverState.loaded || ((!homeDiscoverState.playlists.length && !homeDiscoverState.songs.length) && !homeDiscoverState.loading)) {
-    await loadHomeDiscover(true);
-  }
-  if (homeDiscoverState.songs.length) {
-    playQueue = homeDiscoverState.songs.map(cloneSong);
-    currentIdx = 0;
-    safeRenderQueuePanel('home-private-radio');
-    safeShelfRebuild('home-private-radio', true);
-    forcePlaybackControlsInteractive();
-    playQueueAt(0).catch(function(e){ console.warn('[HomePrivatePlay]', e); });
-    return;
-  }
-  var item = homeDiscoverState.playlists[0];
-  if (item && item.id) {
-    await loadPlaylistIntoQueueById(item.id, true, item.name || '私人雷达');
-    return;
-  }
-  openHomeLibrary();
-}
-function playHomeSong(index) {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  var song = homeDiscoverState.songs[index];
-  if (!song) {
-    if (index > 0) playHomePrivateRadio();
-    else playHomeDaily();
-    return;
-  }
-  playQueue = homeDiscoverState.songs.map(cloneSong);
-  currentIdx = Math.max(0, Math.min(playQueue.length - 1, index));
-  safeRenderQueuePanel('home-song-card');
-  safeShelfRebuild('home-song-card', true);
-  forcePlaybackControlsInteractive();
-  playQueueAt(currentIdx).catch(function(e){ console.warn('[HomeSongPlay]', e); });
-}
-function openHomePlaylist(index) {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  if (!hasAnyPlatformLogin() && !homeDiscoverState.loggedIn) {
-    runHomeSearch('');
-    return;
-  }
-  openPlaylistPanelTab('playlists', true);
-  var item = homeDiscoverState.playlists[index];
-  if (!item || !item.id) {
-    openHomeLibrary();
-    return;
-  }
-  loadPlaylistIntoQueueById(item.id, true, item.name || '');
-}
-function openHomePodcast(index) {
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  openPlaylistPanelTab('podcasts', true);
-  var item = homeDiscoverState.podcasts[index];
-  if (!item || !item.id) {
-    setSearchMode('podcast');
-    loadPodcastHot();
-    return;
-  }
-  loadPodcastRadioIntoQueue(item.id, true, item.name || '');
-}
-function openHomeThirdCard() {
-  if (!hasAnyPlatformLogin() && !homeDiscoverState.loggedIn) {
-    openHomeLocalImport();
-    return;
-  }
-  openHomePodcast(0);
-}
-function openHomeLibrary() {
-  if (!hasAnyPlatformLogin() && !homeDiscoverState.loggedIn) {
-    openHomeProductGuide();
-    return;
-  }
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
-  openPlaylistPanelTab('playlists', true);
-  refreshUserPlaylists(true);
-}
-function goHome() {
-  if (homeForcedOpen || emptyHomeActive) {
-    dismissHomePage({ toast: true });
-    showToast('已关闭 Home');
-    return;
-  }
-  homeSuppressed = false;
-  homeForcedOpen = true;
-  setHomeControlsLocked(true);
-  if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) safeShelfCloseContent('open-empty-home');
-  if (typeof setShelfPinnedOpen === 'function') setShelfPinnedOpen(false, true);
-  togglePlaylistPanel(false);
-  setPeek(document.getElementById('playlist-panel'), false, 'pl');
-  setPeek(document.getElementById('fx-panel'), false, 'fx');
-  setPeek(document.getElementById('search-area'), true, 'search');
-  if (typeof setFocusZone === 'function') setFocusZone(null, true);
-  if (orbit && orbit.focus) orbit.focus.active = false;
-  updateEmptyHomeVisibility({ forceLoad: true });
-  showToast('已回到 Home');
-}
-function dismissHomePage(opts) {
-  opts = opts || {};
-  homeForcedOpen = false;
-  homeSuppressed = true;
-  setHomeControlsLocked(false);
-  updateEmptyHomeVisibility({ forceLoad: false });
-  setPeek(document.getElementById('search-area'), false, 'search');
-  if (typeof setFocusZone === 'function') setFocusZone(null, true);
-}
-function isPointInsideRectWithPad(x, y, rect, pad) {
-  if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-  pad = Number(pad) || 0;
-  return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
-}
-function isPointNearHomeContent(x, y) {
-  var selectors = [
-    '.home-card',
-    '.home-tile',
-    '.home-chip'
-  ];
-  for (var i = 0; i < selectors.length; i++) {
-    var nodes = document.querySelectorAll(selectors[i]);
-    for (var j = 0; j < nodes.length; j++) {
-      if (isPointInsideRectWithPad(x, y, nodes[j].getBoundingClientRect(), 12)) return true;
+  setTimeout(function(){
+    var area = document.getElementById('search-area');
+    if (area) setPeek(area, true, 'search');
+    if ($input) {
+      $input.value = '';
+      $input.focus();
     }
-  }
-  return false;
-}
-function isHomeBlankDismissClick(e) {
-  if (!emptyHomeActive || !e || e.defaultPrevented) return false;
-  if (e.button != null && e.button !== 0) return false;
-  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
-  var target = e.target;
-  if (!target || !target.closest) return false;
-  var blockedSelector = [
-    'button',
-    'a',
-    'input',
-    'textarea',
-    'select',
-    '[contenteditable="true"]',
-    '#desktop-titlebar',
-    '#search-area',
-    '#top-right',
-    '#bottom-bar',
-    '#bottom-handle',
-    '#fx-fab',
-    '#fx-fab-hide-btn',
-    '#fx-panel',
-    '#playlist-panel',
-    '#mini-queue-popover',
-    '#visual-guide',
-    '#upload-tip',
-    '#toast',
-    '#trial-banner',
-    '#source-fallback-notice',
-    '.modal-mask',
-    '.modal',
-    '.track-detail-modal',
-    '.cover-color-pop',
-    '.color-lab-pop'
-  ].join(',');
-  if (target.closest(blockedSelector)) return false;
-  var x = e.clientX;
-  var y = e.clientY;
-  var home = document.getElementById('empty-home');
-  if (!home) return false;
-  var homeRect = home.getBoundingClientRect();
-  if (!isPointInsideRectWithPad(x, y, homeRect, 0)) return false;
-  if (isPointNearHomeContent(x, y)) return false;
-  return true;
-}
-document.addEventListener('click', function(e) {
-  if (!isHomeBlankDismissClick(e)) return;
-  e.preventDefault();
-  e.stopPropagation();
-  dismissHomePage({ reason: 'blank-click' });
-}, true);
-function songFromListenRecord(record) {
-  if (!record) return null;
-  var provider = record.sourceKey || '';
-  if (!provider && record.type === 'qq') provider = 'qq';
-  if (!provider) provider = record.mid ? 'qq' : 'netease';
-  return {
-    provider: provider,
-    source: provider,
-    type: record.type || (provider === 'qq' ? 'qq' : 'song'),
-    id: record.id || record.mid || record.key || '',
-    mid: record.mid || '',
-    songmid: record.mid || '',
-    mediaMid: record.mediaMid || '',
-    name: record.name || '继续听',
-    artist: record.artist || '',
-    cover: record.cover || '',
-  };
-}
-async function playHomeRecent(record) {
-  record = record || homeListenSummary().recent;
-  if (!record) {
-    showToast('还没有听歌记录');
-    return;
-  }
-  var song = songFromListenRecord(record);
-  if (!song || (!song.id && !song.mid)) {
-    runHomeSearch(record.name || '');
-    return;
-  }
-  activeRadioContext = null;
-  playQueue = [cloneSong(song)];
-  currentIdx = 0;
-  safeRenderQueuePanel('home-recent-song');
-  safeShelfRebuild('home-recent-song', true);
-  forcePlaybackControlsInteractive();
-  await playQueueAt(0);
-}
-function openHomeInsight() {
-  var summary = homeListenSummary();
-  if (summary.topArtist && summary.topArtist.name) {
-    runHomeSearch(summary.topArtist.name);
-    return;
-  }
-  if (summary.topSong && summary.topSong.name) {
-    runHomeSearch(summary.topSong.name);
-    return;
-  }
-  showToast('播放几首歌后会生成听歌画像');
-}
-async function playWeatherSong(index) {
-  var radio = homeWeatherRadioState.radio;
-  var songs = radio && radio.songs || [];
-  if (!songs[index]) {
-    startWeatherRadio();
-    return;
-  }
-  activeRadioContext = weatherRadioContext();
-  playQueue = songs.map(function(song){
-    var cloned = cloneSong(song);
-    cloned.radioContext = activeRadioContext;
-    return cloned;
-  });
-  currentIdx = index;
-  safeRenderQueuePanel('weather-radio-song');
-  safeShelfRebuild('weather-radio-song', true);
-  forcePlaybackControlsInteractive();
-  await playQueueAt(index, { context: activeRadioContext });
-}
-function handleHomeTileClick(index) {
-  var row = document.getElementById('home-tile-row');
-  var item = row && row._homeTiles && row._homeTiles[index];
-  if (!item) return;
-  if (item.kind === 'weatherSong') playWeatherSong(item.index);
-  else if (item.kind === 'recent') playHomeRecent(item.record);
-  else if (item.kind === 'profile') openHomeInsight();
-  else if (item.kind === 'song') playHomeSong(item.index);
-  else if (item.kind === 'login') showLoginModal({ source: 'home-tile' });
-  else if (item.kind === 'local') openHomeLocalImport();
-  else if (item.kind === 'guide') openHomeProductGuide();
-  else if (item.kind === 'playlist') openHomePlaylist(item.index);
-  else if (item.kind === 'podcast') openHomePodcast(item.index);
-  else if (item.kind === 'podcastSearch') { setSearchMode('podcast'); loadPodcastHot(); }
-  else if (item.kind === 'library') openHomeLibrary();
-  else runHomeSearch(item.query || item.title || '');
+    if (searchMode === 'podcast') loadPodcastHot();
+    else renderSearchHistory();
+  }, 180);
 }
 function currentCoverSong() {
   if (currentIdx >= 0 && playQueue[currentIdx]) return playQueue[currentIdx];
@@ -14626,7 +13666,7 @@ $input.addEventListener('keydown', function(e){
     clearTimeout(searchTimer);
     $input.blur();
     clearSearchResults();
-    if (!emptyHomeActive) setPeek(document.getElementById('search-area'), false, 'search');
+    setPeek(document.getElementById('search-area'), false, 'search');
   }
 });
 $results.addEventListener('click', function(e){
@@ -14648,7 +13688,7 @@ document.addEventListener('click', function(e){
   var searchArea = document.getElementById('search-area');
   if (!searchArea.contains(e.target)) {
     $results.classList.remove('show');
-    if (!emptyHomeActive) setPeek(searchArea, false, 'search');
+    setPeek(searchArea, false, 'search');
   }
 });
 updateSearchModeTabs();
@@ -14869,6 +13909,10 @@ async function doSearch(q, opts) {
     if (opts.autoPlayFirst) playSearchResult(0);
   } catch (err) { console.error('Search:', err); }
 }
+
+
+
+// ===== js/07-audio-queue-lyrics.js =====
 
 // ============================================================
 //  音频上下文 & 频谱分析
@@ -15263,9 +14307,6 @@ function moveQueueIndexToTop(idx) {
 }
 function playSearchResult(i) {
   var song = playlist[i]; if (!song) return;
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  setHomeControlsLocked(false);
   if (!playQueue.length) { playQueue.unshift(cloneSong(song)); currentIdx = 0; }
   else {
     var matchIdx = -1;
@@ -15543,9 +14584,6 @@ async function playQueueAt(idx, opts) {
   function markPlayPhase(name) { playPhase = name; }
   try {
   markPlayPhase('session-finalize');
-  safePlaybackStep('session-finalize', function(){ finalizeListenSession(false); });
-  homeForcedOpen = false;
-  if (!opts.preserveHomeState) homeSuppressed = false;
   currentIdx = idx;
   trackSwitchToken++;
   markPlayPhase('cancel-previous-track');
@@ -15560,7 +14598,6 @@ async function playQueueAt(idx, opts) {
   var song = safePlaybackStep('hydrate-song', function(){ return hydrateCustomCover(playQueue[idx]); }) || playQueue[idx];
   playQueue[idx] = song;
   var playbackContext = opts.context || (song && song.radioContext) || null;
-  activeRadioContext = playbackContext || null;
   safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
   safePlaybackStep('shelf-preview-suppress', suppressShelfPreviewForPlaybackSwitch);
   pauseCurrentAudioForTrackSwitch();
@@ -15573,7 +14610,6 @@ async function playQueueAt(idx, opts) {
   safePlaybackStep('like-buttons', function(){ updateLikeButtons(song); });
   safePlaybackStep('like-status', function(){ syncLikeStatusForSong(song); });
   safePlaybackStep('cinema-track-profile', function(){ resetCinemaTrackProfile(song); });
-  safePlaybackStep('empty-home', function(){ if (!opts.preserveHomeState) updateEmptyHomeVisibility(); });
   safePlaybackStep('track-ui', function(){
     document.getElementById('hint').classList.add('hidden');
     document.getElementById('thumb-title').textContent = song.name;
@@ -15660,7 +14696,6 @@ async function playQueueAt(idx, opts) {
     updatePlaybackProgressUi();
     audio.onended = function(){
       if (token !== trackSwitchToken) return;
-      finalizeListenSession(true);
       if (playMode === 'single') setTimeout(function(){ playQueueAt(currentIdx, { autoRepeat: true }); }, 0);
       else setTimeout(nextTrack, 0);
     };
@@ -15738,7 +14773,6 @@ async function playQueueAt(idx, opts) {
     }
     forcePlaybackControlsInteractive();
     markPlayPhase('session-begin');
-    safePlaybackStep('listen-session-begin', function(){ beginListenSession(song, playbackContext); });
     markPlayPhase('lyrics-fetch');
     if (song.type === 'podcast') {
       safePlaybackStep('podcast-lyrics', function(){
@@ -15826,7 +14860,6 @@ async function togglePlay() {
       playing = false;
       setPlayIcon(false);
       hideLoading();
-      safePlaybackStep('listen-stats-pause', function(){ updateListenStatsTick(true); });
       forcePlaybackControlsInteractive();
       safePlaybackStep('sync-pause-state', function(){ syncPlaybackStateFromAudioEvent('manual-pause'); });
       safePlaybackStep('pause-controls-hide', function(){ scheduleControlsHide(520); });
@@ -15877,7 +14910,6 @@ function clearQueue() {
   safeShelfRebuild('clear-queue');
   updateCustomCoverButton();
   updateCustomLyricControls();
-  updateEmptyHomeVisibility({ forceLoad: false });
 }
 function removeFromQueue(idx) {
   if (idx < 0 || idx >= playQueue.length) return;
@@ -15887,7 +14919,6 @@ function removeFromQueue(idx) {
   safeShelfRebuild('remove-queue-item');
   updateCustomCoverButton();
   updateCustomLyricControls();
-  updateEmptyHomeVisibility({ forceLoad: false });
 }
 function playModeLabel(mode) {
   return { loop: '顺序循环', shuffle: '随机播放', single: '单曲循环' }[mode] || '顺序循环';
@@ -16285,6 +15316,10 @@ function toggleLyricsPanel(force) {
 }
 function updateLyricsHighlight() { /* v8: 由 tickLyricsParticles 接管 */ }
 
+
+
+// ===== js/08-panels-files-controls.js =====
+
 // ============================================================
 //  播放列表面板
 // ============================================================
@@ -16591,7 +15626,6 @@ async function refreshUserPlaylists(force) {
     var animatePanel = isPlaylistPanelVisibleForRender();
     renderUserPlaylistsList({ animate: animatePanel, reset: true });
     renderMyPodcastCollections({ animate: animatePanel });
-    if (emptyHomeActive) renderHomeDiscover();
   } catch (e) { console.warn(e); }
 }
 var playlistPanelDetailState = { key: '', loading: false, playlist: null, tracks: [], token: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER };
@@ -16973,9 +16007,6 @@ async function loadPodcastRadioIntoQueue(id, autoplay, title) {
 }
 async function loadPlaylistIntoQueueById(id, autoplay, title) {
   if (!id) return;
-  homeForcedOpen = false;
-  homeSuppressed = false;
-  updateEmptyHomeVisibility();
   showLoading();
   var qqPlaylistId = String(id || '').indexOf('qq:') === 0 ? String(id).slice(3) : '';
   var r = null;
@@ -17113,7 +16144,6 @@ progressBar.addEventListener('pointercancel', endProgressDrag);
 progressBar.addEventListener('lostpointercapture', function(){ progressDragState.active = false; progressBar.classList.remove('is-dragging'); });
 setInterval(function(){
   if (!audio) { updatePlaybackProgressUi(); return; }
-  updateListenStatsTick(false);
   updatePlaybackProgressUi();
   if (audio.currentTime) updateLyricsHighlight();
 }, 200);
@@ -17130,7 +16160,6 @@ function handleFiles(files) {
     else if (f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(f.name)) imgFile = f;
   }
   if (audioFile) {
-    finalizeListenSession(false);
     var url = URL.createObjectURL(audioFile);
     var localTitle = audioFile.name.replace(/\.[^.]+$/, '');
     trackSwitchToken++;
@@ -17174,7 +16203,7 @@ function handleFiles(files) {
     audio.src = url;
     updatePlaybackProgressUi();
     lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
-    audio.onended = function(){ finalizeListenSession(true); playing = false; setPlayIcon(false); };
+    audio.onended = function(){ playing = false; setPlayIcon(false); };
     audio.onloadedmetadata = function(){
       if (currentLocalSong && currentLocalSong.localUrl === url) {
         currentLocalSong.duration = audio && isFinite(audio.duration) ? audio.duration : 0;
@@ -17186,9 +16215,7 @@ function handleFiles(files) {
     applyPreferredLyricsForCurrent(true);
     document.getElementById('trial-banner').classList.remove('show');
     audio.load();
-    playAudio().then(function(ok){
-      if (ok && currentLocalSong && currentLocalSong.localUrl === url) beginListenSession(currentLocalSong, null);
-    });
+    playAudio().then(function(){});
     setTimeout(function(){
       if (currentLocalSong && currentLocalSong.localUrl === url) prepareLocalBeatAnalysis(currentLocalSong, url);
     }, 520);
@@ -17315,8 +16342,6 @@ function normalizeFxArchiveSnapshot(raw) {
     visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
     visualTintColor: normalizeHexColor(raw.visualTintColor || fxDefaults.visualTintColor),
     uiAccentColor: normalizeHexColor(raw.uiAccentColor || fxDefaults.uiAccentColor, fxDefaults.uiAccentColor),
-    homeAccentColor: normalizeHexColor(raw.homeAccentColor || fxDefaults.homeAccentColor, fxDefaults.homeAccentColor),
-    homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor, fxDefaults.homeIconColor),
     visualIconColor: normalizeHexColor(raw.visualIconColor || fxDefaults.visualIconColor, fxDefaults.visualIconColor),
     backgroundColorMode: raw.backgroundColorMode === 'custom' || raw.backgroundColorCustom ? 'custom' : 'cover',
     backgroundColor: normalizeHexColor(raw.backgroundColor || fxDefaults.backgroundColor, fxDefaults.backgroundColor),
@@ -17812,61 +16837,20 @@ function updateLyricGlowControls() {
     linkBtn.title = linked ? '点击后单独设置溢光颜色' : '点击后让溢光跟随高亮';
   }
 }
-function applyHomeAccentColor() {
-  var color = normalizeHexColor(fx.homeAccentColor || '#00f5d4');
-  var rgb = hexToRgb(color);
-  document.documentElement.style.setProperty('--home-accent', color);
-  document.documentElement.style.setProperty('--home-accent-rgb', rgb.r + ',' + rgb.g + ',' + rgb.b);
-}
-function updateHomeAccentControls() {
-  applyHomeAccentColor();
-  var color = normalizeHexColor(fx.homeAccentColor || '#00f5d4');
-  var picker = document.getElementById('home-accent-picker');
-  var value = document.getElementById('home-accent-value');
-  if (picker) picker.value = color;
-  if (value) value.textContent = color.toUpperCase();
-}
-function setHomeAccentColor(color, silent) {
-  fx.homeAccentColor = normalizeHexColor(color || '#00f5d4');
-  updateHomeAccentControls();
-  saveLyricLayout();
-  if (!silent) showToast('Home 填充: ' + fx.homeAccentColor.toUpperCase());
-}
-function resetHomeAccentColor() {
-  setHomeAccentColor(fxDefaults.homeAccentColor || '#00f5d4');
-}
 function applyIconAccentColors() {
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
-  var homeRgb = hexToRgb(homeColor);
   var visualRgb = hexToRgb(visualColor);
   var root = document.documentElement;
-  root.style.setProperty('--home-icon-color', homeColor);
-  root.style.setProperty('--home-icon-rgb', homeRgb.r + ',' + homeRgb.g + ',' + homeRgb.b);
   root.style.setProperty('--visual-icon-color', visualColor);
   root.style.setProperty('--visual-icon-rgb', visualRgb.r + ',' + visualRgb.g + ',' + visualRgb.b);
 }
 function updateIconAccentControls() {
   applyIconAccentColors();
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
-  var homePicker = document.getElementById('home-icon-picker');
-  var homeValue = document.getElementById('home-icon-value');
   var visualPicker = document.getElementById('visual-icon-picker');
   var visualValue = document.getElementById('visual-icon-value');
-  if (homePicker) homePicker.value = homeColor;
-  if (homeValue) homeValue.textContent = homeColor.toUpperCase();
   if (visualPicker) visualPicker.value = visualColor;
   if (visualValue) visualValue.textContent = visualColor.toUpperCase();
-}
-function setHomeIconColor(color, silent) {
-  fx.homeIconColor = normalizeHexColor(color || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
-  updateIconAccentControls();
-  saveLyricLayout();
-  if (!silent) showToast('主页图标: ' + fx.homeIconColor.toUpperCase());
-}
-function resetHomeIconColor() {
-  setHomeIconColor(fxDefaults.homeIconColor || '#f4d28a');
 }
 function setVisualIconColor(color, silent) {
   fx.visualIconColor = normalizeHexColor(color || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
@@ -18123,7 +17107,7 @@ function currentCoverPickerCanvas() {
 }
 function coverPickerSwatchColors() {
   var pal = stageLyrics.coverPalette || stageLyrics.palette || {};
-  var list = [pal.primary, pal.secondary, pal.highlight, fx.visualTintColor, fx.uiAccentColor, fx.homeAccentColor]
+  var list = [pal.primary, pal.secondary, pal.highlight, fx.visualTintColor, fx.uiAccentColor]
     .map(function(c){ return normalizeHexColor(c || '', ''); })
     .filter(function(c){ return /^#[0-9a-f]{6}$/i.test(c); });
   var seen = {};
@@ -18428,42 +17412,6 @@ function syncFxUniforms() {
   if (uniforms.uTintStrength) uniforms.uTintStrength.value = fx.visualTintMode === 'custom' ? 0.42 : 0;
   syncSkullParticleColors();
 }
-var homeWaveTrackState = { bars: 0, smooth: [] };
-function ensureHomeWaveTrackBars() {
-  var el = document.getElementById('home-wave-track');
-  if (!el) return;
-  var count = 24;
-  if (homeWaveTrackState.bars === count && el.children.length === count) return;
-  homeWaveTrackState.bars = count;
-  homeWaveTrackState.smooth = new Array(count).fill(0);
-  el.innerHTML = new Array(count + 1).join('<span></span>');
-}
-function updateHomeAudioVisual(dt) {
-  if (!emptyHomeActive) return;
-  var wave = document.getElementById('home-wave-track');
-  if (!wave) return;
-  var nowMs = performance.now();
-  if (homeWaveTrackState.lastAt && nowMs - homeWaveTrackState.lastAt < 80) return;
-  homeWaveTrackState.lastAt = nowMs;
-  ensureHomeWaveTrackBars();
-  var bars = wave.children;
-  var nowT = uniforms && uniforms.uTime ? uniforms.uTime.value : performance.now() / 1000;
-  for (var i = 0; i < bars.length; i++) {
-    var ratio = bars.length > 1 ? i / (bars.length - 1) : 0;
-    var bin = 0;
-    if (frequencyData && frequencyData.length) {
-      bin = (frequencyData[Math.min(frequencyData.length - 1, Math.floor(Math.pow(ratio, 1.2) * (frequencyData.length - 1)))] || 0) / 255;
-    } else {
-      bin = 0.16 + Math.sin(nowT * 1.4 + i * 0.34) * 0.06;
-    }
-    var target = clampRange(Math.max(bin, smoothBass * 0.35 + smoothMid * 0.18 + beatPulse * 0.24), 0.03, 1);
-    var prev = homeWaveTrackState.smooth[i] || 0;
-    prev += (target - prev) * (target > prev ? 0.34 : 0.12);
-    homeWaveTrackState.smooth[i] = prev;
-    bars[i].style.height = Math.max(4, prev * 18) + 'px';
-    bars[i].style.opacity = String(clampRange(0.36 + prev * 0.68, 0.32, 1));
-  }
-}
 function setRange(id, value) {
   var el = document.getElementById(id);
   if (!el) return;
@@ -18610,7 +17558,6 @@ function updateFxInputs() {
   updateLyricGlowControls();
   updateLyricFontControls();
   updateUiAccentControls();
-  updateHomeAccentControls();
   updateIconAccentControls();
   updateCustomBackgroundControls();
   updateVisualTintControls();
@@ -18967,16 +17914,6 @@ function bindFxPanel() {
     visualTintPicker.addEventListener('input', function(){ setVisualTintCustom(visualTintPicker.value, true); });
     visualTintPicker.addEventListener('change', function(){ showToast('视觉主色: ' + normalizeHexColor(visualTintPicker.value).toUpperCase()); });
   }
-  var homeAccentPicker = document.getElementById('home-accent-picker');
-  if (homeAccentPicker) {
-    homeAccentPicker.addEventListener('input', function(){ setHomeAccentColor(homeAccentPicker.value, true); });
-    homeAccentPicker.addEventListener('change', function(){ showToast('Home 填充: ' + normalizeHexColor(homeAccentPicker.value).toUpperCase()); });
-  }
-  var homeIconPicker = document.getElementById('home-icon-picker');
-  if (homeIconPicker) {
-    homeIconPicker.addEventListener('input', function(){ setHomeIconColor(homeIconPicker.value, true); });
-    homeIconPicker.addEventListener('change', function(){ showToast('主页图标: ' + normalizeHexColor(homeIconPicker.value, '#f4d28a').toUpperCase()); });
-  }
   var visualIconPicker = document.getElementById('visual-icon-picker');
   if (visualIconPicker) {
     visualIconPicker.addEventListener('input', function(){ setVisualIconColor(visualIconPicker.value, true); });
@@ -19000,7 +17937,7 @@ function bindFxPanel() {
       e.target.value = '';
     });
   }
-  ['ui-accent-picker','visual-tint-picker','home-accent-picker','home-icon-picker','visual-icon-picker','bg-color-picker','shelf-accent-picker','lyric-color-picker','lyric-highlight-picker','lyric-glow-picker'].forEach(function(id){
+  ['ui-accent-picker','visual-tint-picker','visual-icon-picker','bg-color-picker','shelf-accent-picker','lyric-color-picker','lyric-highlight-picker','lyric-glow-picker'].forEach(function(id){
     bindColorLabPicker(document.getElementById(id));
   });
   bindColorLabRows();
@@ -19349,6 +18286,10 @@ function setCamMode(m) {
   else if (m === 'gesture') startGestureControl();
   saveLyricLayout();
 }
+
+
+
+// ===== js/09-account-ui.js =====
 
 // ============================================================
 //  更新提示预览
@@ -20026,10 +18967,7 @@ async function refreshLoginStatus(force) {
     if (loginStatus.loggedIn && !hasPlatformLogin(activeAccountProvider)) activeAccountProvider = 'netease';
     renderUserBtn();
     if (info && info.loggedIn) {
-      homeDiscoverState.loaded = false;
-      homeDiscoverState.loggedIn = true;
       refreshUserPlaylists(true);
-      loadHomeDiscover(true);
       syncLikeStatusForSongs(playQueue.concat(playlist || []));
     } else {
       userPlaylists = qqPlaylists.slice();
@@ -20078,11 +19016,7 @@ async function refreshQQLoginStatus() {
       if (prevLogged || qqLoginWasLoggedIn) showToast(qqLoginStatus.stale ? 'QQ 音乐登录已失效' : 'QQ 音乐已掉登录');
       qqPlaylists = [];
       userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'qq'; });
-      homeDiscoverState.loaded = false;
     } else if (!userPlaylists.some(function(pl){ return pl && pl.provider === 'qq'; })) {
-      homeDiscoverState.loaded = false;
-      homeDiscoverState.loggedIn = true;
-      loadHomeDiscover(true);
       refreshUserPlaylists(true);
     } else if (qqLoginStatus.stale) {
       showToast('QQ 音乐登录状态可能已失效');
@@ -20280,7 +19214,6 @@ async function openNeteaseWebLogin() {
     activeAccountProvider = 'netease';
     renderUserBtn();
     refreshUserPlaylists(true);
-    loadHomeDiscover(true);
     if (statusEl) { statusEl.textContent = '网易云会话已保存'; statusEl.className = 'scan'; }
     setTimeout(function(){
       closeLoginModal();
@@ -20546,7 +19479,7 @@ var loginGuideAnimating = false;
 var loginGuideRaf = null;
 function runLoginGuideParticles(done) {
   var canvas = document.getElementById('login-guide-canvas');
-  if (!canvas || reduceSplashMotion) {
+  if (!canvas || prefersReducedMotion) {
     if (done) setTimeout(done, 120);
     return;
   }
@@ -20649,7 +19582,6 @@ function runLoginGuideParticles(done) {
 function maybeRunStartupLoginGuide(source) {
   if (startupLoginGuideShown || loginGuideAnimating) return;
   if (visualGuideActive) return;
-  if (document.body.classList.contains('splash-active')) return;
   if (immersiveMode) return;
   if (!loginStatusChecked || loginStatusCheckFailed || loginStatus.loggedIn || playing) return;
   var loginModal = document.getElementById('login-modal');
@@ -20657,9 +19589,9 @@ function maybeRunStartupLoginGuide(source) {
   if ((loginModal && loginModal.classList.contains('show')) || (userModal && userModal.classList.contains('show'))) return;
   startupLoginGuideShown = true;
   setTimeout(function(){
-    if (loginStatus.loggedIn || playing || immersiveMode || document.body.classList.contains('splash-active')) return;
+    if (loginStatus.loggedIn || playing || immersiveMode) return;
     runLoginGuideParticles(function(){ showLoginModal({ guided: true, source: source || 'startup' }); });
-  }, source === 'splash' ? 6200 : 2600);
+  }, 2600);
 }
 
 // ============================================================
@@ -20707,7 +19639,6 @@ function setIdleGuideVisible(show, interactive) {
 }
 function shouldShowIdleGuide() {
   if (!IDLE_GUIDE_BACKGROUND_ENABLED) return false;
-  if (document.body.classList.contains('splash-active')) return false;
   if (immersiveMode) return false;
   if (playing) return false;
   if (loginGuideAnimating) return false;
@@ -20716,7 +19647,6 @@ function shouldShowIdleGuide() {
   return true;
 }
 function shouldShowShelfHoverCue(value) {
-  if (document.body.classList.contains('splash-active')) return false;
   if (!shelfHoverCue.guide && document.querySelector('.modal-mask.show')) return false;
   if (!shelfHoverCue.guide) {
     if (shelfPinnedOpen) return false;
@@ -21245,15 +20175,11 @@ function maybeRunStartupVisualGuide(source) {
   if (source !== 'manual' && !hasAnyPlatformLogin()) return false;
   setTimeout(function(){
     if (!visualGuideWasSeen() || source === 'manual') startVisualGuide({ source: source || 'startup' });
-  }, source === 'splash' ? 3600 : 1400);
+  }, 1400);
   return true;
 }
 function startVisualGuide(opts) {
   opts = opts || {};
-  if (document.body.classList.contains('splash-active')) {
-    setTimeout(function(){ startVisualGuide(opts); }, 700);
-    return;
-  }
   if (immersiveMode) setImmersiveMode(false);
   closeMiniQueue();
   closeUploadTip(false);
@@ -21446,6 +20372,10 @@ function handleVisualGuideSurfaceClick(e) {
   var guide = document.getElementById('visual-guide');
   if (guide) guide.addEventListener('click', handleVisualGuideSurfaceClick);
 })();
+
+
+
+// ===== js/10-device-bootstrap.js =====
 
 // ============================================================
 //  动态库加载
@@ -21890,7 +20820,6 @@ document.addEventListener('keydown', function(e){
     if (freeCamera && freeCamera.active) { e.preventDefault(); return; }
     e.preventDefault(); togglePlay();
   }
-  else if (e.code === 'Home') { e.preventDefault(); goHome(); }
   else if (e.code === 'ArrowUp') { e.preventDefault(); adjustVolumeByKeyboard(0.05); }
   else if (e.code === 'ArrowDown') { e.preventDefault(); adjustVolumeByKeyboard(-0.05); }
   else if (e.code === 'ArrowRight') nextTrack();
@@ -21952,7 +20881,6 @@ function setPeek(el, on, key) {
   if (!el) return;
   if (immersiveMode && on && (key === 'search' || key === 'fx')) return;
   if (on && !diyPlayerMode && !isEchoPluginBridgeMode() && key === 'fx') return;
-  if (!on && key === 'search' && emptyHomeActive && !immersiveMode) return;
   if (!on && key === 'pl' && playlistPanelPinned) return;
   if (on && key === 'fx') document.body.classList.remove('fullscreen-diy-peek');
   if (on) {
@@ -22026,7 +20954,7 @@ function maybeShowUploadTipOnce() {
     setTimeout(maybeShowUploadTipOnce, 1800);
     return;
   }
-  if (document.body.classList.contains('splash-active') || loginGuideAnimating) {
+  if (loginGuideAnimating) {
     setTimeout(maybeShowUploadTipOnce, 900);
     return;
   }
@@ -22141,12 +21069,6 @@ window.addEventListener('mousemove', function(e){
   updateUserCapsuleAutoHideFromPointer(ex, ey);
   updateFxFabAutoHideFromPointer(ex, ey);
   updateFullscreenDiyPeekFromPointer(ex, ey);
-  if (document.body.classList.contains('splash-active')) {
-    updateShelfHoverCueFromPointer(null);
-    updateShelfCardHoverSelection(null);
-    setFocusZone(null);
-    return;
-  }
   if (immersiveMode) {
     updateShelfHoverCueFromPointer(e);
     updateShelfCardHoverSelection(e);
@@ -22178,7 +21100,7 @@ window.addEventListener('mousemove', function(e){
   var uploadTipOpen = !!(uploadTip && uploadTip.classList.contains('show'));
   var inSearchPanel = saOn && ex >= saRect.left - 24 && ex <= saRect.right + 24 && ey >= saRect.top - 22 && ey <= saRect.bottom + 42;
   if (ey < 66 || inSearchPanel || searchFocused || uploadTipOpen) setPeek(sa, true, 'search');
-  else if (saOn && !emptyHomeActive) setPeek(sa, false, 'search');
+  else if (saOn) setPeek(sa, false, 'search');
   // 控制台: 右下角触发；一旦面板出现，就按真实面板矩形保留显示
   var fpOn = fp.classList.contains('peek') || fp.classList.contains('show');
   var fpRect = fp.getBoundingClientRect();
@@ -22220,625 +21142,6 @@ window.addEventListener('mousemove', function(e){
     newFocus = 'shelf-stage';
   }
   setFocusZone(newFocus, newFocus === 'queue');
-});
-
-// ============================================================
-//  启动页 (splash) 控制
-// ============================================================
-
-document.body.classList.add('splash-active');
-var splashAnimating = true;
-var splashCanvas = null, splashCtx = null;
-var splashGl = null, splashGlProgram = null, splashGlBuffer = null, splashGlUniforms = null;
-var splashW = 0, splashH = 0;
-var splashDust = [];
-var splashStreaks = [];
-var splashShards = [];
-var splashPixelRatio = 1;
-var splashStartedAt = performance.now();
-var splashSoundPlayed = false;
-var splashAudioCtx = null;
-var splashSoundFallbackArmed = false;
-var splashTimer = null;
-var reduceSplashMotion = false;
-var splashReadyToEnter = false;
-
-function splashClamp01(v) { return Math.max(0, Math.min(1, v)); }
-function splashSmoothstep(edge0, edge1, x) {
-  var t = splashClamp01((x - edge0) / Math.max(0.0001, edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-function splashEaseOutCubic(t) {
-  t = splashClamp01(t);
-  return 1 - Math.pow(1 - t, 3);
-}
-
-function initMineradioSplashWebgl(canvas) {
-  var gl = null;
-  try {
-    gl = canvas.getContext('webgl', {
-      alpha: true,
-      antialias: false,
-      depth: false,
-      stencil: false,
-      premultipliedAlpha: false,
-      preserveDrawingBuffer: false,
-      powerPreference: 'high-performance'
-    }) || canvas.getContext('experimental-webgl');
-  } catch (e) {
-    gl = null;
-  }
-  if (!gl) return false;
-
-  var vertexSource = [
-    'attribute vec2 aPosition;',
-    'varying vec2 vUv;',
-    'void main(){',
-    '  vUv = aPosition * 0.5 + 0.5;',
-    '  gl_Position = vec4(aPosition, 0.0, 1.0);',
-    '}'
-  ].join('\n');
-
-  var fragmentSource = [
-    'precision highp float;',
-    'varying vec2 vUv;',
-    'uniform vec2 uResolution;',
-    'uniform float uTime;',
-    '',
-    'float saturate(float v){ return clamp(v, 0.0, 1.0); }',
-    'float ease(float v){ v = saturate(v); return v * v * (3.0 - 2.0 * v); }',
-    'mat2 rot(float a){ float c = cos(a); float s = sin(a); return mat2(c, -s, s, c); }',
-    'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }',
-    'float noise(vec2 p){',
-    '  vec2 i = floor(p);',
-    '  vec2 f = fract(p);',
-    '  vec2 u = f * f * (3.0 - 2.0 * f);',
-    '  return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), u.x), mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);',
-    '}',
-    '',
-    'float animatedLoop(vec2 uv, float t, float channel){',
-    '  vec2 q = uv;',
-    '  q *= rot(0.28 + sin(t * 0.18) * 0.12);',
-    '  q.x += 0.055 * sin(t * 0.30 + channel);',
-    '  q.y += 0.040 * cos(t * 0.24 + channel * 1.7);',
-    '  float ang = atan(q.y, q.x);',
-    '  float angularShift = sin(ang * 3.0 + t * 0.72 + channel * 1.9) * 0.078;',
-    '  angularShift += sin(ang * 7.0 - t * 0.54 + channel) * 0.020;',
-    '  float neonD = length(q) + angularShift;',
-    '  float warpD = length(q * vec2(1.34 + 0.06 * sin(t * 0.25), 0.82 + 0.04 * cos(t * 0.31)));',
-    '  warpD += 0.026 * sin(q.x * 4.4 + t * 0.62) + 0.018 * sin(q.y * 5.2 - t * 0.45);',
-    '  float diamondD = abs(q.x) * 1.20 + abs(q.y) * 0.84;',
-    '  float d = mix(warpD, diamondD, 0.32);',
-    '  d = mix(d, neonD, 0.20 + 0.04 * sin(t * 0.18 + channel));',
-    '  float pattern = mod((q.x + q.y) * 0.62 + sin(q.x * 5.5 + t) * 0.015 + sin(q.y * 7.0 - t * 0.75) * 0.012, 0.20);',
-    '  float acc = 0.0;',
-    '  for (int i = 1; i <= 6; i++) {',
-    '    float fi = float(i);',
-    '    float f = fract(t * 0.152 - channel * 0.018 + 0.011 * fi) * 4.70 - d + pattern;',
-    '    acc += 0.00110 * fi * fi / max(abs(f), 0.0065);',
-    '  }',
-    '  float threadCoord = q.x * 0.92 - q.y * 0.58 + 0.030 * sin(q.x * 5.2 + t * 0.72);',
-    '  float threadLines = 0.0065 / max(abs(sin((threadCoord + t * 0.10 + channel * 0.035) * 27.0)), 0.070);',
-    '  acc += threadLines * (0.50 + 0.30 * sin(ang * 1.2 + t + channel));',
-    '  return min(acc, 1.95);',
-    '}',
-    '',
-    'void main(){',
-    '  vec2 p = vUv * 2.0 - 1.0;',
-    '  p.x *= uResolution.x / max(uResolution.y, 1.0);',
-    '  float t = uTime;',
-    '  float intro = ease(t / 0.72);',
-    '  float bloomIn = ease((t - 0.10) / 1.10);',
-    '  float climax = exp(-pow((t - 3.62) / 0.58, 2.0));',
-    '  float preClimax = ease((t - 2.15) / 1.25) * (1.0 - ease((t - 3.86) / 0.72));',
-    '  float afterglow = exp(-pow((t - 4.14) / 0.62, 2.0));',
-    '  float calm = 1.0 - 0.22 * ease((t - 4.75) / 0.70);',
-    '  float settle = 1.0 - 0.34 * ease((t - 5.05) / 0.52);',
-    '  vec2 uv = p * (0.98 + 0.05 * sin(t * 0.25));',
-    '  uv += vec2(0.0, -0.025);',
-    '  vec2 flowAxis = normalize(vec2(0.86, -0.50));',
-    '  vec2 crossAxis = vec2(-flowAxis.y, flowAxis.x);',
-    '  float lane = dot(p, flowAxis);',
-    '  float crossLane = dot(p, crossAxis);',
-    '  float syncWave = sin(crossLane * 5.4 + lane * 1.1 - t * 1.85);',
-    '  uv += flowAxis * syncWave * 0.055 * climax;',
-    '  uv += crossAxis * sin(lane * 7.2 + t * 1.25) * 0.034 * climax;',
-    '  uv *= 1.0 + 0.045 * preClimax - 0.020 * climax;',
-    '  vec3 ch1 = vec3(1.00, 0.13, 0.31);',
-    '  vec3 ch2 = vec3(0.16, 1.00, 0.86);',
-    '  vec3 ch3 = vec3(1.00, 0.76, 0.28);',
-    '  float a = animatedLoop(uv, t, 0.0);',
-    '  float b = animatedLoop(uv * 1.018 + vec2(0.012, -0.008), t + 0.18, 1.0);',
-    '  float c = animatedLoop(uv * 0.986 + vec2(-0.010, 0.010), t + 0.35, 2.0);',
-    '  vec3 loopCol = ch1 * a + ch2 * b + ch3 * c;',
-    '  float tunnel = animatedLoop(uv * 1.42 + vec2(sin(t * 0.2) * 0.08, cos(t * 0.17) * 0.05), t * 1.12 + 1.7, 2.7);',
-    '  loopCol += mix(ch2, ch3, 0.35 + 0.25 * sin(t)) * tunnel * (0.30 + 0.24 * preClimax);',
-    '  float syncBand = exp(-pow((lane + 0.08 * sin(t * 0.72)) / 0.62, 2.0));',
-    '  float phaseThread = pow(0.5 + 0.5 * sin(crossLane * 13.5 + lane * 2.2 - t * 3.1), 8.0);',
-    '  float phaseThread2 = pow(0.5 + 0.5 * sin(crossLane * 9.0 - lane * 5.4 + t * 2.4), 10.0);',
-    '  vec3 climaxCol = (mix(ch2, ch3, 0.36) * phaseThread + ch1 * phaseThread2 * 0.52) * syncBand * climax;',
-    '  float afterBand = exp(-pow((lane - 0.34) / 0.72, 2.0));',
-    '  climaxCol += mix(ch1, ch2, vUv.x) * afterBand * afterglow * 0.13;',
-    '  float centerBeam = exp(-abs(p.y + 0.005 * sin(t * 3.0)) * 24.0) * (0.14 + 0.52 * exp(-pow((t - 0.74) / 0.34, 2.0)));',
-    '  float bladeMask = smoothstep(-1.55, -0.08, p.x) * (1.0 - smoothstep(0.08, 1.55, p.x));',
-    '  vec3 blade = mix(ch1, ch2, vUv.x) * centerBeam * bladeMask * (0.40 + 0.28 * climax);',
-    '  float flare = exp(-dot(p, p) * 3.6) * exp(-pow((t - 0.88) / 0.40, 2.0));',
-    '  vec3 col = vec3(0.002, 0.004, 0.005);',
-    '  col += loopCol * (0.56 + 0.46 * bloomIn) * calm * settle;',
-    '  col += climaxCol * 0.22;',
-    '  float diagonalGlint = exp(-pow(lane * 1.2 + crossLane * 0.10, 2.0) / 0.030) * climax;',
-    '  col += blade + vec3(1.0, 0.78, 0.42) * flare * 0.18 + vec3(1.0, 0.86, 0.58) * diagonalGlint * 0.07;',
-    '  float scan = 0.92 + 0.08 * sin((vUv.y * uResolution.y + t * 52.0) * 0.72);',
-    '  float grain = noise(vUv * uResolution.xy * 0.52 + t * 17.0) - 0.5;',
-    '  col *= scan;',
-    '  col += grain * 0.018;',
-    '  col *= intro;',
-    '  col = max(col - vec3(0.010, 0.012, 0.012), 0.0);',
-    '  col = vec3(1.0) - exp(-max(col, 0.0) * (0.62 + 0.18 * climax));',
-    '  float vignette = smoothstep(1.52, 0.20, length(p * vec2(0.78, 1.04)));',
-    '  col *= 0.38 + 0.86 * vignette;',
-    '  col += vec3(0.020, 0.010, 0.014) * (1.0 - vignette);',
-    '  gl_FragColor = vec4(col, 1.0);',
-    '}'
-  ].join('\n');
-
-  function compile(type, source) {
-    var shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      console.warn('Splash shader compile failed:', gl.getShaderInfoLog(shader));
-      gl.deleteShader(shader);
-      return null;
-    }
-    return shader;
-  }
-
-  var vertexShader = compile(gl.VERTEX_SHADER, vertexSource);
-  var fragmentShader = compile(gl.FRAGMENT_SHADER, fragmentSource);
-  if (!vertexShader || !fragmentShader) return false;
-
-  var program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  gl.deleteShader(vertexShader);
-  gl.deleteShader(fragmentShader);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.warn('Splash shader link failed:', gl.getProgramInfoLog(program));
-    gl.deleteProgram(program);
-    return false;
-  }
-
-  splashGl = gl;
-  splashGlProgram = program;
-  splashGlBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, splashGlBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  splashGlUniforms = {
-    position: gl.getAttribLocation(program, 'aPosition'),
-    resolution: gl.getUniformLocation(program, 'uResolution'),
-    time: gl.getUniformLocation(program, 'uTime')
-  };
-  gl.disable(gl.DEPTH_TEST);
-  gl.disable(gl.CULL_FACE);
-  return true;
-}
-
-function drawMineradioSplashWebgl(elapsed) {
-  var gl = splashGl;
-  if (!gl || !splashGlProgram || !splashGlUniforms) return;
-  gl.viewport(0, 0, splashCanvas.width, splashCanvas.height);
-  gl.useProgram(splashGlProgram);
-  gl.bindBuffer(gl.ARRAY_BUFFER, splashGlBuffer);
-  gl.enableVertexAttribArray(splashGlUniforms.position);
-  gl.vertexAttribPointer(splashGlUniforms.position, 2, gl.FLOAT, false, 0, 0);
-  gl.uniform2f(splashGlUniforms.resolution, splashCanvas.width, splashCanvas.height);
-  gl.uniform1f(splashGlUniforms.time, elapsed);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-
-(function initMineradioSplashCanvas() {
-  splashCanvas = document.getElementById('splash-canvas');
-  if (!splashCanvas) return;
-  if (!reduceSplashMotion && initMineradioSplashWebgl(splashCanvas)) {
-    splashCtx = null;
-  } else {
-    splashCtx = splashCanvas.getContext('2d');
-  }
-  function resize() {
-    splashPixelRatio = Math.min(1.6, Math.max(1, window.devicePixelRatio || 1));
-    splashW = window.innerWidth;
-    splashH = window.innerHeight;
-    splashCanvas.width = Math.max(1, Math.floor(splashW * splashPixelRatio));
-    splashCanvas.height = Math.max(1, Math.floor(splashH * splashPixelRatio));
-    if (splashCtx) splashCtx.setTransform(splashPixelRatio, 0, 0, splashPixelRatio, 0, 0);
-    if (splashGl) splashGl.viewport(0, 0, splashCanvas.width, splashCanvas.height);
-    splashDust = [];
-    splashStreaks = [];
-    splashShards = [];
-    var count = reduceSplashMotion ? 28 : 84;
-    for (var i = 0; i < count; i++) {
-      splashDust.push({
-        x: Math.random() * splashW,
-        y: Math.random() * splashH,
-        vx: (Math.random() - 0.5) * 0.18,
-        vy: (Math.random() - 0.5) * 0.11,
-        r: Math.random() * 1.35 + 0.28,
-        a: Math.random() * 0.105 + 0.025,
-        p: Math.random() * Math.PI * 2
-      });
-    }
-    var streakColors = [
-      'rgba(244,210,138,',
-      'rgba(122,215,194,',
-      'rgba(255,83,103,',
-      'rgba(157,184,207,'
-    ];
-    var streakCount = reduceSplashMotion ? 6 : 22;
-    for (var s = 0; s < streakCount; s++) {
-      splashStreaks.push({
-        x: Math.random() * splashW,
-        y: splashH * (0.20 + Math.random() * 0.62),
-        len: splashW * (0.12 + Math.random() * 0.24),
-        width: 0.75 + Math.random() * 2.1,
-        speed: splashW * (0.00028 + Math.random() * 0.00042),
-        angle: (-10 + Math.random() * 20) * Math.PI / 180,
-        phase: Math.random() * Math.PI * 2,
-        color: streakColors[s % streakColors.length],
-        delay: Math.random() * 1.1,
-        alpha: 0.18 + Math.random() * 0.36
-      });
-    }
-    var shardCount = reduceSplashMotion ? 10 : 34;
-    for (var h = 0; h < shardCount; h++) {
-      splashShards.push({
-        ox: (Math.random() - 0.5) * splashW * 0.92,
-        oy: (Math.random() - 0.5) * splashH * 0.22,
-        w: 18 + Math.random() * 86,
-        h: 1 + Math.random() * 5,
-        skew: (Math.random() - 0.5) * 20,
-        phase: Math.random() * Math.PI * 2,
-        color: streakColors[h % streakColors.length],
-        alpha: 0.10 + Math.random() * 0.24
-      });
-    }
-  }
-  resize();
-  window.addEventListener('resize', resize);
-  drawMineradioSplash();
-})();
-
-function drawMineradioSplash() {
-  if (!splashAnimating || (!splashCtx && !splashGl)) return;
-  requestAnimationFrame(drawMineradioSplash);
-  var elapsed = (performance.now() - splashStartedAt) / 1000;
-  if (splashGl && splashGlProgram) {
-    drawMineradioSplashWebgl(elapsed);
-    return;
-  }
-  splashCtx.clearRect(0, 0, splashW, splashH);
-
-  var base = splashCtx.createLinearGradient(0, 0, splashW, splashH);
-  base.addColorStop(0, 'rgba(1,6,7,0.68)');
-  base.addColorStop(0.45, 'rgba(10,9,12,0.74)');
-  base.addColorStop(1, 'rgba(0,0,0,0.84)');
-  splashCtx.fillStyle = base;
-  splashCtx.fillRect(0, 0, splashW, splashH);
-
-  splashCtx.save();
-  splashCtx.globalAlpha = 0.22;
-  splashCtx.fillStyle = 'rgba(255,255,255,0.035)';
-  var scanOffset = (elapsed * 28) % 36;
-  for (var sy = -scanOffset; sy < splashH; sy += 36) splashCtx.fillRect(0, sy, splashW, 1);
-  splashCtx.restore();
-
-  for (var i = 0; i < splashDust.length; i++) {
-    var d = splashDust[i];
-    d.x += d.vx;
-    d.y += d.vy;
-    d.p += 0.018;
-    if (d.x < -10) d.x = splashW + 10;
-    if (d.x > splashW + 10) d.x = -10;
-    if (d.y < -10) d.y = splashH + 10;
-    if (d.y > splashH + 10) d.y = -10;
-    var alpha = d.a * (0.58 + Math.sin(d.p + elapsed * 0.8) * 0.34);
-    splashCtx.beginPath();
-    splashCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-    splashCtx.fillStyle = 'rgba(255,255,255,' + Math.max(0, alpha) + ')';
-    splashCtx.fill();
-  }
-
-  splashCtx.save();
-  splashCtx.globalCompositeOperation = 'lighter';
-  for (var k = 0; k < splashStreaks.length; k++) {
-    var st = splashStreaks[k];
-    var travel = (elapsed * st.speed * 240 + st.x + Math.sin(elapsed * 0.8 + st.phase) * 28) % (splashW + st.len + 180);
-    var px = travel - st.len - 90;
-    var py = st.y + Math.sin(elapsed * 0.75 + st.phase) * 18;
-    var fade = splashSmoothstep(st.delay * 0.55, st.delay * 0.55 + 0.52, elapsed) * (1 - splashSmoothstep(3.52, 4.12, elapsed));
-    if (fade <= 0) continue;
-    splashCtx.save();
-    splashCtx.translate(px, py);
-    splashCtx.rotate(st.angle);
-    var sg = splashCtx.createLinearGradient(-st.len * 0.5, 0, st.len * 0.5, 0);
-    sg.addColorStop(0, st.color + '0)');
-    sg.addColorStop(0.52, st.color + (st.alpha * fade).toFixed(3) + ')');
-    sg.addColorStop(1, 'rgba(255,255,255,0)');
-    splashCtx.strokeStyle = sg;
-    splashCtx.lineWidth = st.width;
-    splashCtx.shadowColor = st.color + (0.34 * fade).toFixed(3) + ')';
-    splashCtx.shadowBlur = 18;
-    splashCtx.beginPath();
-    splashCtx.moveTo(-st.len * 0.5, 0);
-    splashCtx.lineTo(st.len * 0.5, 0);
-    splashCtx.stroke();
-    splashCtx.restore();
-  }
-
-  var lineT = splashEaseOutCubic((elapsed - 0.12) / 1.18);
-  var exitFade = 1 - splashSmoothstep(3.58, 4.12, elapsed);
-  if (lineT > 0 && exitFade > 0) {
-    var centerY = splashH * 0.5 + Math.sin(elapsed * 1.4) * 1.6;
-    var slitW = splashW * (0.16 + lineT * 0.72);
-    var left = splashW * 0.5 - slitW * 0.5;
-    var right = splashW * 0.5 + slitW * 0.5;
-    var coreAlpha = (0.34 + lineT * 0.58) * exitFade;
-    var slitGrad = splashCtx.createLinearGradient(left, centerY, right, centerY);
-    slitGrad.addColorStop(0, 'rgba(255,83,103,0)');
-    slitGrad.addColorStop(0.18, 'rgba(255,83,103,' + (0.18 * exitFade).toFixed(3) + ')');
-    slitGrad.addColorStop(0.50, 'rgba(255,255,255,' + coreAlpha.toFixed(3) + ')');
-    slitGrad.addColorStop(0.68, 'rgba(244,210,138,' + (0.38 * exitFade).toFixed(3) + ')');
-    slitGrad.addColorStop(0.84, 'rgba(122,215,194,' + (0.20 * exitFade).toFixed(3) + ')');
-    slitGrad.addColorStop(1, 'rgba(122,215,194,0)');
-    splashCtx.shadowColor = 'rgba(244,210,138,' + (0.48 * exitFade).toFixed(3) + ')';
-    splashCtx.shadowBlur = 42 + lineT * 42;
-    splashCtx.lineCap = 'round';
-    splashCtx.strokeStyle = slitGrad;
-    splashCtx.lineWidth = 1.4 + lineT * 2.2;
-    splashCtx.beginPath();
-    splashCtx.moveTo(left, centerY);
-    splashCtx.lineTo(right, centerY);
-    splashCtx.stroke();
-
-    var ignition = Math.exp(-Math.pow((elapsed - 0.72) / 0.26, 2));
-    if (ignition > 0.018) {
-      var ig = splashCtx.createLinearGradient(0, centerY, splashW, centerY);
-      ig.addColorStop(0, 'rgba(122,215,194,0)');
-      ig.addColorStop(0.46, 'rgba(122,215,194,' + (0.07 * ignition).toFixed(3) + ')');
-      ig.addColorStop(0.50, 'rgba(255,255,255,' + (0.16 * ignition).toFixed(3) + ')');
-      ig.addColorStop(0.54, 'rgba(255,83,103,' + (0.08 * ignition).toFixed(3) + ')');
-      ig.addColorStop(1, 'rgba(244,210,138,0)');
-      splashCtx.fillStyle = ig;
-      splashCtx.fillRect(0, centerY - 48 * ignition, splashW, 96 * ignition);
-    }
-
-    var waveAlpha = splashSmoothstep(0.72, 1.95, elapsed) * exitFade;
-    if (waveAlpha > 0) {
-      splashCtx.shadowBlur = 20;
-      splashCtx.strokeStyle = 'rgba(244,210,138,' + (0.22 * waveAlpha).toFixed(3) + ')';
-      splashCtx.lineWidth = 1;
-      splashCtx.beginPath();
-      var steps = 82;
-      for (var wi = 0; wi <= steps; wi++) {
-        var u = wi / steps;
-        var x = left + slitW * u;
-        var edge = 1 - Math.abs(u - 0.5) * 2;
-        var amp = (4 + 18 * lineT) * Math.pow(Math.max(0, edge), 1.4) * waveAlpha;
-        var y = centerY + Math.sin(u * 34 + elapsed * 8.2) * amp + Math.sin(u * 87 - elapsed * 5.1) * amp * 0.18;
-        if (wi === 0) splashCtx.moveTo(x, y);
-        else splashCtx.lineTo(x, y);
-      }
-      splashCtx.stroke();
-    }
-
-    var shardT = splashSmoothstep(0.72, 2.45, elapsed) * exitFade;
-    for (var si = 0; si < splashShards.length; si++) {
-      var sh = splashShards[si];
-      var drift = Math.sin(elapsed * 1.7 + sh.phase) * 22;
-      var sx = splashW * 0.5 + sh.ox * (0.18 + shardT * 0.82) + drift;
-      var sy2 = centerY + sh.oy * (0.20 + shardT * 0.92);
-      var localAlpha = sh.alpha * shardT * (0.62 + Math.sin(elapsed * 5 + sh.phase) * 0.38);
-      if (localAlpha <= 0) continue;
-      splashCtx.save();
-      splashCtx.translate(sx, sy2);
-      splashCtx.rotate((-6 + sh.skew * 0.10) * Math.PI / 180);
-      splashCtx.fillStyle = sh.color + Math.max(0, localAlpha).toFixed(3) + ')';
-      splashCtx.shadowColor = sh.color + Math.min(0.38, localAlpha * 1.2).toFixed(3) + ')';
-      splashCtx.shadowBlur = 14;
-      splashCtx.beginPath();
-      splashCtx.moveTo(-sh.w * 0.5, -sh.h * 0.5);
-      splashCtx.lineTo(sh.w * 0.5, -sh.h * 0.5);
-      splashCtx.lineTo(sh.w * 0.5 + sh.skew, sh.h * 0.5);
-      splashCtx.lineTo(-sh.w * 0.5 + sh.skew, sh.h * 0.5);
-      splashCtx.closePath();
-      splashCtx.fill();
-      splashCtx.restore();
-    }
-
-    var flash = Math.exp(-Math.pow((elapsed - 2.52) / 0.38, 2));
-    if (flash > 0.015) {
-      var fg = splashCtx.createLinearGradient(0, centerY, splashW, centerY);
-      fg.addColorStop(0, 'rgba(255,83,103,0)');
-      fg.addColorStop(0.48, 'rgba(255,255,255,' + (0.20 * flash).toFixed(3) + ')');
-      fg.addColorStop(0.52, 'rgba(244,210,138,' + (0.24 * flash).toFixed(3) + ')');
-      fg.addColorStop(1, 'rgba(122,215,194,0)');
-      splashCtx.fillStyle = fg;
-      splashCtx.fillRect(0, centerY - 46 * flash, splashW, 92 * flash);
-    }
-  }
-  splashCtx.restore();
-}
-
-function playMineradioIntroSound() {
-  if (splashSoundPlayed) return;
-  try {
-    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return;
-    var ctx = splashAudioCtx || new AudioContextCtor();
-    splashAudioCtx = ctx;
-    if (ctx.state === 'suspended' && ctx.resume) {
-      ctx.resume().then(function(){
-        if (!splashSoundPlayed) playMineradioIntroSound();
-      }).catch(function(){});
-      if (ctx.state === 'suspended') return;
-    }
-    splashSoundPlayed = true;
-
-    var now = ctx.currentTime + 0.02;
-    var master = ctx.createGain();
-    master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.062, now + 0.16);
-    master.gain.exponentialRampToValueAtTime(0.040, now + 3.35);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 5.28);
-    master.connect(ctx.destination);
-
-    var noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 2.45), ctx.sampleRate);
-    var data = noiseBuffer.getChannelData(0);
-    for (var i = 0; i < data.length; i++) {
-      var tail = 1 - i / data.length;
-      data[i] = (Math.random() * 2 - 1) * Math.pow(tail, 1.35);
-    }
-    var noise = ctx.createBufferSource();
-    var noiseGain = ctx.createGain();
-    var noiseFilter = ctx.createBiquadFilter();
-    noise.buffer = noiseBuffer;
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.setValueAtTime(720, now);
-    noiseFilter.frequency.exponentialRampToValueAtTime(2400, now + 2.2);
-    noiseFilter.Q.setValueAtTime(0.72, now);
-    noiseGain.gain.setValueAtTime(0.0001, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.020, now + 0.12);
-    noiseGain.gain.exponentialRampToValueAtTime(0.010, now + 1.60);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.42);
-    noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master);
-    noise.start(now); noise.stop(now + 2.46);
-
-    var low = ctx.createOscillator();
-    var lowGain = ctx.createGain();
-    low.type = 'sine';
-    low.frequency.setValueAtTime(86, now + 0.18);
-    low.frequency.exponentialRampToValueAtTime(43, now + 1.18);
-    lowGain.gain.setValueAtTime(0.0001, now + 0.12);
-    lowGain.gain.exponentialRampToValueAtTime(0.032, now + 0.30);
-    lowGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.34);
-    low.connect(lowGain); lowGain.connect(master);
-    low.start(now + 0.12); low.stop(now + 1.40);
-
-    function softTone(type, f0, f1, startAt, dur, peak) {
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      var filter = ctx.createBiquadFilter();
-      osc.type = type;
-      osc.frequency.setValueAtTime(f0, now + startAt);
-      osc.frequency.exponentialRampToValueAtTime(f1, now + startAt + dur * 0.72);
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(3400, now + startAt);
-      gain.gain.setValueAtTime(0.0001, now + startAt);
-      gain.gain.exponentialRampToValueAtTime(peak, now + startAt + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + startAt + dur);
-      osc.connect(filter); filter.connect(gain); gain.connect(master);
-      osc.start(now + startAt);
-      osc.stop(now + startAt + dur + 0.04);
-    }
-    softTone('triangle', 440, 660, 1.05, 0.72, 0.018);
-    softTone('sine', 880, 1320, 2.10, 0.86, 0.013);
-    softTone('triangle', 1180, 1760, 2.72, 0.52, 0.010);
-    softTone('triangle', 660, 1180, 3.32, 0.82, 0.014);
-    softTone('sine', 1760, 1040, 3.64, 0.46, 0.010);
-  } catch (e) {}
-}
-function armSplashSoundFallback() {
-  if (splashSoundFallbackArmed) return;
-  splashSoundFallbackArmed = true;
-  function unlock() {
-    if (!splashSoundPlayed) playMineradioIntroSound();
-    document.removeEventListener('pointerdown', unlock, true);
-    document.removeEventListener('keydown', unlock, true);
-  }
-  document.addEventListener('pointerdown', unlock, true);
-  document.addEventListener('keydown', unlock, true);
-}
-
-function dismissSplash() {
-  var s = document.getElementById('splash');
-  if (!s || s.classList.contains('hide') || s.classList.contains('exiting')) return;
-  markAppPerf('splash-dismiss');
-  if (splashTimer) { clearTimeout(splashTimer); splashTimer = null; }
-  splashReadyToEnter = false;
-  s.classList.remove('ready');
-  revealUserPresetParticles({ duration: reduceSplashMotion ? 700 : 1600 });
-  revealIdleParticles(0, reduceSplashMotion ? 700 : 2400);
-  document.body.classList.add('splash-revealing');
-  s.classList.add('exiting');
-
-  var content = s.querySelector('.splash-content');
-  if (content) {
-    content.style.transition = 'opacity 680ms cubic-bezier(.22,1,.36,1), transform 980ms cubic-bezier(.22,1,.36,1)';
-    content.style.opacity = '0';
-    content.style.transform = 'translateY(-14px) scale(.986)';
-  }
-
-  setTimeout(function() {
-    s.classList.add('hide');
-    splashAnimating = false;
-    document.body.classList.remove('splash-active');
-    document.body.classList.remove('splash-revealing');
-    markAppPerf('home-revealed');
-    if (s && s.parentNode) s.style.display = 'none';
-    requestAnimationFrame(function(){
-      var homeShown = updateEmptyHomeVisibility({ forceLoad: true });
-      if (!homeShown && shouldForceEmptyHomeAfterSplash()) {
-        homeSuppressed = false;
-        homeForcedOpen = true;
-        homeShown = updateEmptyHomeVisibility({ forceLoad: true });
-      }
-      requestAnimationFrame(function(){
-        var guideStarted = maybeRunStartupVisualGuide('splash');
-        if (!guideStarted && !hasAnyPlatformLogin()) maybeRunStartupLoginGuide('splash');
-        else if (!guideStarted && !homeShown) maybeRunStartupLoginGuide('splash');
-        setTimeout(maybeShowUploadTipOnce, 5200);
-      });
-    });
-  }, 1180);
-}
-
-function markSplashReadyToEnter() {
-  var s = document.getElementById('splash');
-  if (!s || s.classList.contains('hide') || s.classList.contains('exiting')) return;
-  markAppPerf('splash-ready');
-  splashReadyToEnter = true;
-  splashTimer = null;
-  s.classList.add('ready');
-  s.setAttribute('role', 'button');
-  s.setAttribute('tabindex', '0');
-  s.setAttribute('aria-label', '点击进入 Mineradio');
-}
-
-document.addEventListener('DOMContentLoaded', function(){
-  var s = document.getElementById('splash');
-  if (!s) return;
-  markAppPerf('dom-content-loaded');
-  armSplashSoundFallback();
-  function requestSplashEnter() {
-    playMineradioIntroSound();
-    if (splashReadyToEnter) dismissSplash();
-  }
-  s.addEventListener('click', requestSplashEnter);
-  document.addEventListener('keydown', function(e){
-    if (!document.body.classList.contains('splash-active')) return;
-    if (e.key === 'Enter' || e.code === 'Space') {
-      e.preventDefault();
-      requestSplashEnter();
-    }
-  });
-  if (reduceSplashMotion) {
-    s.classList.add('reduce-motion');
-    splashTimer = setTimeout(markSplashReadyToEnter, 900);
-    return;
-  }
-  playMineradioIntroSound();
-  splashTimer = setTimeout(markSplashReadyToEnter, 5000);
 });
 
 var desktopOverlayPushState = {
@@ -23047,14 +21350,9 @@ var startupLoginStatusPromise = Promise.all([refreshLoginStatus(), refreshQQLogi
 startQQLoginStatusAutoRefresh();
 if (startupLoginStatusPromise && startupLoginStatusPromise.then) {
   startupLoginStatusPromise.then(function(){
-    if (hasAnyPlatformLogin()) {
-      refreshUserPlaylists(true);
-      loadHomeDiscover(true);
-    }
-    if (document.body.classList.contains('splash-active')) return;
-    var homeShown = updateEmptyHomeVisibility({ forceLoad: hasAnyPlatformLogin() });
+    if (hasAnyPlatformLogin()) refreshUserPlaylists(true);
     if (!hasAnyPlatformLogin()) maybeRunStartupLoginGuide('status');
-    else if (!homeShown) maybeRunStartupLoginGuide('status');
+    else maybeRunStartupVisualGuide('status');
   });
 }
 var collectNameInput = document.getElementById('collect-new-name');
@@ -23081,6 +21379,10 @@ updateCustomLyricControls();
 updateLikeButtons();
 setTimeout(initUpdatePreview, 9000);
 
+
+
+// ===== js/11-main-loop-bridge.js =====
+
 // ============================================================
 //  主循环
 // ============================================================
@@ -23095,9 +21397,22 @@ var renderPerfState = {
   lastSampleAt: performance.now()
 };
 window.__mineradioPerf = renderPerfState;
-var splashWarmRenderLast = 0;
-function isMainSceneCoveredBySplash() {
-  return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
+var mainLoopStarted = false;
+var mainLoopErrorReported = false;
+var visualStepErrorReported = {};
+function reportMainLoopError(error) {
+  if (mainLoopErrorReported) return;
+  mainLoopErrorReported = true;
+  console.warn('[EchoMusicBridge] 主循环异常，桥接层继续运行', error);
+}
+function safeVisualStep(label, fn) {
+  try {
+    fn();
+  } catch (error) {
+    if (visualStepErrorReported[label]) return;
+    visualStepErrorReported[label] = true;
+    console.warn('[EchoMusicBridge] 可选视觉步骤异常，已跳过本步骤: ' + label, error);
+  }
 }
 function getAdaptiveRenderFps() {
   if (isDeepBackgroundMode()) return 1;
@@ -23139,19 +21454,13 @@ function sampleRenderPerf(now, dt) {
 }
 function animate() {
   requestAnimationFrame(animate);
+  try {
   var now = performance.now();
   if (shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
-  if (isMainSceneCoveredBySplash()) {
-    if (now - splashWarmRenderLast > 520) {
-      splashWarmRenderLast = now;
-      renderer.render(scene, camera);
-    }
-    return;
-  }
   pointerParallax.x += (pointerTarget.x - pointerParallax.x) * 0.040;
   pointerParallax.y += (pointerTarget.y - pointerParallax.y) * 0.040;
 
@@ -23349,9 +21658,8 @@ function animate() {
 
   updateRipples(dt);
   updateFloatLayer(dt);
-  if (shelfManager) shelfManager.update(dt);
+  if (shelfManager) safeVisualStep('playlist-shelf', function(){ shelfManager.update(dt); });
   tickLyricsParticles();
-  updateHomeAudioVisual(dt);
 
   // 电影镜头
   updateCinema(dt);
@@ -23392,8 +21700,19 @@ function animate() {
   }
 
 renderer.render(scene, camera);
+  } catch (error) {
+    reportMainLoopError(error);
+  }
 }
-animate();
+function startMainLoopSafely() {
+  if (mainLoopStarted) return;
+  mainLoopStarted = true;
+  try {
+    requestAnimationFrame(animate);
+  } catch (error) {
+    reportMainLoopError(error);
+  }
+}
 
 // ============================================================
 //  EchoMusic 插件桥接层
@@ -23409,6 +21728,7 @@ animate();
   var bridgePlaybackClock = { time: 0, duration: 0, playing: false, rate: 1, receivedAt: 0 };
   var bridgeHostControls = { platform: '', showFullscreenButton: true, canShowMiniPlayer: false };
   var bridgePlaybackPending = null;
+  var bridgeLyricsForcedOpen = false;
   var BRIDGE_PLAYBACK_PENDING_TIMEOUT = 1800;
 
   function post(type, extra) {
@@ -23570,34 +21890,6 @@ animate();
     var style = document.createElement('style');
     style.id = 'echo-plugin-bridge-style';
     style.textContent = [
-      'body.echo-plugin-bridge{background:#010304!important;overflow:hidden!important}',
-      'body.echo-plugin-bridge #splash,',
-      'body.echo-plugin-bridge #empty-home,',
-      'body.echo-plugin-bridge #search-area,',
-      'body.echo-plugin-bridge #top-right,',
-      'body.echo-plugin-bridge #upload-actions,',
-      'body.echo-plugin-bridge #file-input,',
-      'body.echo-plugin-bridge #background-image-input,',
-      'body.echo-plugin-bridge #drop-overlay,',
-      'body.echo-plugin-bridge #trial-banner,',
-      'body.echo-plugin-bridge #login-modal,',
-      'body.echo-plugin-bridge #update-modal,',
-      'body.echo-plugin-bridge #visual-guide,',
-      'body.echo-plugin-bridge #desktop-titlebar,',
-      'body.echo-plugin-bridge #bottom-handle,',
-      'body.echo-plugin-bridge #quality-control,',
-      'body.echo-plugin-bridge #heart-btn,',
-      'body.echo-plugin-bridge #collect-btn,',
-      'body.echo-plugin-bridge #controls-hide-btn,',
-      'body.echo-plugin-bridge #immersive-btn,',
-      'body.echo-plugin-bridge .fullscreen-toggle-btn{display:none!important}',
-      'body.echo-plugin-bridge #canvas-container{opacity:1!important;visibility:visible!important}',
-      'body.echo-plugin-bridge #bottom-bar{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:translateX(-50%) translateY(0)!important}',
-      'body.echo-plugin-bridge #controls{grid-template-columns:minmax(0,1fr) max-content minmax(0,1fr)}',
-      'body.echo-plugin-bridge #fx-fab{display:flex!important;right:24px!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}',
-      'body.echo-plugin-bridge #fx-fab-hide-btn{display:none!important}',
-      'body.echo-plugin-bridge #fx-panel{display:block!important}',
-      'body.echo-plugin-bridge #playlist-panel,body.echo-plugin-bridge #fx-panel{z-index:35}',
       '#echo-bridge-close{position:fixed;z-index:80;top:8px;left:16px;right:auto;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:rgba(255,255,255,.7);cursor:pointer;padding:0;transition:color .2s ease,background .2s ease}',
       '#echo-bridge-close:hover{color:#fff;background:rgba(255,255,255,.1)}',
       '#echo-bridge-close svg{width:20px;height:20px;display:block;stroke:currentColor}',
@@ -23747,20 +22039,111 @@ animate();
 
   function forcePlayerSurface() {
     document.body.classList.add('echo-plugin-bridge');
-    document.body.classList.remove('splash-active', 'splash-revealing', 'empty-home-active');
-    var splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('exiting');
-      splash.style.display = 'none';
-    }
-    var home = document.getElementById('empty-home');
-    if (home) home.style.display = 'none';
     var bottom = document.getElementById('bottom-bar');
     if (bottom) bottom.classList.add('visible');
     var handle = document.getElementById('bottom-handle');
     if (handle) handle.style.display = 'none';
     if (typeof setControlsHidden === 'function') setControlsHidden(false);
     if (typeof forcePlaybackControlsInteractive === 'function') forcePlaybackControlsInteractive();
+  }
+
+  function refreshBridgeViewport(reason) {
+    try {
+      if (typeof scheduleMainRendererViewportRefresh === 'function') {
+        scheduleMainRendererViewportRefresh(reason || 'echo-bridge');
+      }
+    } catch (error) {
+      console.warn('[EchoMusicBridge] 视口刷新失败', error);
+    }
+  }
+
+  function recoverBridgeVisuals(reason) {
+    try {
+      if (typeof recoverVisualsAfterBackground === 'function') {
+        recoverVisualsAfterBackground(reason || 'echo-bridge');
+      }
+    } catch (error) {
+      console.warn('[EchoMusicBridge] 视觉恢复失败', error);
+    }
+  }
+
+  function revealBridgeVisualSurface() {
+    refreshBridgeViewport('echo-bridge-snapshot');
+    recoverBridgeVisuals('echo-bridge-snapshot');
+    if (typeof markRenderInteraction === 'function') markRenderInteraction('echo-bridge-snapshot', 1200);
+    if (typeof uniforms === 'undefined' || !uniforms) return;
+    if (uniforms.uLoading) {
+      try {
+        if (typeof forceLoadingSettled === 'function') forceLoadingSettled('echo-bridge-snapshot');
+        else uniforms.uLoading.value = 0;
+      } catch (error) {
+        console.warn('[EchoMusicBridge] 加载态清理失败', error);
+        uniforms.uLoading.value = 0;
+      }
+    }
+    if (!uniforms.uAlpha) return;
+
+    var currentAlpha = Number(uniforms.uAlpha.value || 0);
+    if (currentAlpha >= 0.98) return;
+    if (typeof firstPlayDone !== 'undefined') firstPlayDone = true;
+
+    try {
+      if (typeof revealUserPresetParticles === 'function') {
+        revealUserPresetParticles({ alpha: 1.0, duration: 260 });
+      } else if (typeof tweenParticleAlpha === 'function') {
+        tweenParticleAlpha(currentAlpha, 1.0, 260);
+      } else {
+        uniforms.uAlpha.value = 1.0;
+      }
+    } catch (error) {
+      console.warn('[EchoMusicBridge] 视觉层唤醒失败', error);
+      uniforms.uAlpha.value = 1.0;
+    }
+  }
+
+  function ensureBridgeLyricsEnabled() {
+    if (bridgeLyricsForcedOpen) return;
+    bridgeLyricsForcedOpen = true;
+    if (typeof setParticleLyricsSilently === 'function') {
+      try {
+        setParticleLyricsSilently(true);
+      } catch (error) {
+        console.warn('[EchoMusicBridge] 歌词首屏开启失败', error);
+        if (typeof fx === 'object' && fx) fx.particleLyrics = true;
+        lyricsVisible = true;
+      }
+    } else if (typeof fx === 'object' && fx) {
+      fx.particleLyrics = true;
+      lyricsVisible = true;
+    }
+  }
+
+  function refreshBridgeLyricsSurface() {
+    if (fx && fx.particleLyrics && typeof createLyricsParticles === 'function') {
+      try {
+        createLyricsParticles();
+      } catch (error) {
+        console.warn('[EchoMusicBridge] 歌词粒子刷新失败', error);
+      }
+      return;
+    }
+    if (typeof renderLyrics === 'function') renderLyrics();
+  }
+
+  function setBridgeWaitingState(waiting) {
+    waiting = !!waiting;
+    document.body.classList.toggle('bridge-waiting', waiting);
+    if (!waiting) return;
+    var controlTitle = document.getElementById('control-title');
+    var controlArtist = document.getElementById('control-artist');
+    var controlCover = document.getElementById('control-cover');
+    var timeDisplay = document.getElementById('time-display');
+    if (controlTitle) controlTitle.textContent = '等待 EchoMusic';
+    if (controlArtist) controlArtist.textContent = '播放歌曲后将在这里显示歌词';
+    if (controlCover) controlCover.classList.add('cover-empty');
+    if (timeDisplay) timeDisplay.textContent = '0:00 / 0:00';
+    if (typeof setPlayIcon === 'function') setPlayIcon(false);
+    if (typeof setProgressVisual === 'function') setProgressVisual(0);
   }
 
   function applyCover(song) {
@@ -23818,7 +22201,7 @@ animate();
     }).filter(function(line){ return line.text && !isNoLyricText(line.text); });
     lyricsHasNativeKaraoke = lyricsLines.some(hasValidLyricCharacters);
     lyricsTimingSource = lyricsLines.length ? (lyricsHasNativeKaraoke ? 'echo-characters' : 'echo-line') : 'none';
-    if (typeof renderLyrics === 'function') renderLyrics();
+    refreshBridgeLyricsSurface();
   }
 
   function applyQueue(snapshot) {
@@ -23862,15 +22245,18 @@ animate();
 
   function applySnapshot(snapshot) {
     if (!snapshot) return;
+    var rawTrack = snapshot.track || null;
+    var hasTrack = !!(rawTrack && (rawTrack.id || rawTrack.hash || rawTrack.name || rawTrack.title));
     var snapshotPlaying = resolveBridgePlaybackPlaying(snapshot.isPlaying);
+    if (!hasTrack) snapshotPlaying = false;
     bridgeSnapshot = snapshot;
     bridgeSnapshot.isPlaying = snapshotPlaying;
     installAudioShim();
     forcePlayerSurface();
 
-    var song = normalizeBridgeSong(snapshot.track);
+    var song = normalizeBridgeSong(rawTrack);
     var duration = Math.max(0, Number(snapshot.duration || song.duration || 0));
-    playing = snapshotPlaying;
+    playing = hasTrack && snapshotPlaying;
     bridgePlaybackClock.duration = duration;
     bridgePlaybackClock.playing = playing;
     audio.paused = !playing;
@@ -23883,17 +22269,26 @@ animate();
     playMode = hostModeToMine(snapshot.playMode);
 
     applyQueue(snapshot);
-    applyCover(song);
+    applyCover(hasTrack ? song : {});
+    if (hasTrack) revealBridgeVisualSurface();
 
     var hint = document.getElementById('hint');
     if (hint) hint.classList.add('hidden');
     var thumbWrap = document.getElementById('thumb-wrap');
-    if (thumbWrap) thumbWrap.classList.toggle('visible', !!song.id);
+    if (thumbWrap) thumbWrap.classList.toggle('visible', hasTrack && !!song.id);
     var thumbTitle = document.getElementById('thumb-title');
     var thumbArtist = document.getElementById('thumb-artist');
-    if (thumbTitle) thumbTitle.textContent = song.name || '';
-    if (thumbArtist) thumbArtist.textContent = song.artist || '';
-    if (typeof updateControlTrackInfo === 'function') updateControlTrackInfo(song);
+    if (hasTrack) {
+      setBridgeWaitingState(false);
+      if (thumbTitle) thumbTitle.textContent = song.name || '';
+      if (thumbArtist) thumbArtist.textContent = song.artist || '';
+      if (typeof updateControlTrackInfo === 'function') updateControlTrackInfo(song);
+    } else {
+      currentIdx = -1;
+      if (thumbTitle) thumbTitle.textContent = '';
+      if (thumbArtist) thumbArtist.textContent = '';
+      setBridgeWaitingState(true);
+    }
     if (typeof updatePlayModeButton === 'function') updatePlayModeButton(false);
     if (typeof setPlayIcon === 'function') setPlayIcon(playing);
     if (typeof updatePlaybackProgressUi === 'function') updatePlaybackProgressUi();
@@ -23993,6 +22388,7 @@ animate();
     if (data.type === 'echo-player-frontend:init') {
       bridgeHostControls = Object.assign(bridgeHostControls, (data.payload && data.payload.hostControls) || {});
       forcePlayerSurface();
+      refreshBridgeViewport('echo-bridge-init');
       installWindowControls();
       post('echo-player-frontend:request-snapshot');
     } else if (data.type === 'echo-player-frontend:snapshot') {
@@ -24011,10 +22407,13 @@ animate();
   installWindowControls();
   installAudioShim();
   installControlInterceptors();
+  ensureBridgeLyricsEnabled();
   forcePlayerSurface();
+  setBridgeWaitingState(true);
   setInterval(function() {
     forcePlayerSurface();
     installControlInterceptors();
   }, 1000);
   post('echo-player-frontend:ready');
 })();
+startMainLoopSafely();
