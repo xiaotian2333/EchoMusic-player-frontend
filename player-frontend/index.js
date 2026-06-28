@@ -28,8 +28,6 @@ var AUDIO_FADE_IN_MS = 460;
 var AUDIO_FADE_OUT_MS = 420;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var playlistCoverCache = {};
-var CUSTOM_LYRIC_STORE_KEY = 'mineradio-custom-lyrics-v1';
-var CUSTOM_LYRIC_PREF_STORE_KEY = 'mineradio-custom-lyric-prefs-v1';
 var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
 var DEFAULT_PLAYBACK_VISUAL_PRESET = 0;
@@ -51,13 +49,9 @@ var prefersReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-r
 function isEchoPluginBridgeMode() {
   return !!(document.body && document.body.classList.contains('echo-plugin-bridge'));
 }
-var customLyricMap = readCustomLyricMap();
-var customLyricPrefs = readCustomLyricPrefs();
 var localBeatMapCache = readLocalBeatMapCache();
 var localBeatMapPrefs = readLocalBeatPrefs();
 var currentLocalSong = null;
-var lyricSourceMode = 'original';
-var originalLyricsState = { lines: [], hasNativeKaraoke: false, timingSource: 'none' };
 var localBeatAnalysis = { song:null, audioUrl:'', mode:'mr', active:false, token:0 };
 var visualGuideActive = false, visualGuideStep = 0, visualGuideResizeBound = false;
 var visualGuideState = { bottomWasVisible: false, searchWasPeek: false, manual: false };
@@ -11884,50 +11878,9 @@ function songSourceLabel(song) {
   if (song.type === 'podcast' || song.source === 'podcast') return '网易云播客';
   return '网易云音乐';
 }
-function readCustomLyricMap() {
-  try {
-    var raw = JSON.parse(localStorage.getItem(CUSTOM_LYRIC_STORE_KEY) || '{}') || {};
-    var out = {};
-    Object.keys(raw).forEach(function(key){
-      var item = raw[key];
-      if (typeof item === 'string') out[key] = { text: item, updatedAt: 0 };
-      else if (item && typeof item.text === 'string') out[key] = { text: item.text, updatedAt: item.updatedAt || 0 };
-    });
-    return out;
-  } catch (e) {
-    return {};
-  }
-}
-function saveCustomLyricMap() {
-  try {
-    localStorage.setItem(CUSTOM_LYRIC_STORE_KEY, JSON.stringify(customLyricMap || {}));
-    return true;
-  } catch (e) {
-    console.warn('custom lyric save failed:', e);
-    return false;
-  }
-}
-function readCustomLyricPrefs() {
-  try { return JSON.parse(localStorage.getItem(CUSTOM_LYRIC_PREF_STORE_KEY) || '{}') || {}; }
-  catch (e) { return {}; }
-}
-function saveCustomLyricPrefs() {
-  try { localStorage.setItem(CUSTOM_LYRIC_PREF_STORE_KEY, JSON.stringify(customLyricPrefs || {})); } catch (e) {}
-}
-function songCustomLyricKey(song) {
-  return songStorageKey(song);
-}
 function currentLyricSong() {
   if (currentIdx >= 0 && playQueue[currentIdx]) return playQueue[currentIdx];
   return currentLocalSong || null;
-}
-function getCustomLyricEntry(song) {
-  var key = songCustomLyricKey(song);
-  return key && customLyricMap[key] ? customLyricMap[key] : null;
-}
-function hasCustomLyricForSong(song) {
-  var entry = getCustomLyricEntry(song);
-  return !!(entry && String(entry.text || '').trim());
 }
 function cloneLyricLine(line) {
   var copy = Object.assign({}, line || {});
@@ -11937,13 +11890,6 @@ function cloneLyricLine(line) {
 }
 function cloneLyricLines(lines) {
   return (Array.isArray(lines) ? lines : []).map(cloneLyricLine);
-}
-function setOriginalLyricsState(lines, hasNativeKaraoke, timingSource) {
-  originalLyricsState = {
-    lines: cloneLyricLines(lines || []),
-    hasNativeKaraoke: !!hasNativeKaraoke,
-    timingSource: timingSource || 'fallback'
-  };
 }
 function applyLyricsState(lines, hasNativeKaraoke, timingSource) {
   lyricsHasNativeKaraoke = !!hasNativeKaraoke;
@@ -11956,168 +11902,6 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource) {
     lyricsTimingSource = 'fallback';
   }
   renderLyrics();
-  updateCustomLyricControls();
-}
-function applyOriginalLyricsState() {
-  lyricSourceMode = 'original';
-  applyLyricsState(originalLyricsState.lines, originalLyricsState.hasNativeKaraoke, originalLyricsState.timingSource);
-}
-function parseCustomLyricText(text) {
-  var raw = String(text || '').trim();
-  if (!raw) return [];
-  var lrcLines = parseLyricText(raw);
-  if (lrcLines.length && !lrcLines.every(function(line){ return isNoLyricText(line.text); })) {
-    return lrcLines.map(function(line){
-      var copy = cloneLyricLine(line);
-      copy.source = 'custom-lrc';
-      return copy;
-    });
-  }
-  var rows = raw.split(/\r?\n/).map(function(line){ return line.trim(); }).filter(function(line){ return line && !isNoLyricText(line); });
-  if (!rows.length) return [];
-  var duration = audio && isFinite(audio.duration) && audio.duration > 8 ? audio.duration : 0;
-  var gap = duration ? Math.max(2.8, Math.min(7.2, duration / Math.max(1, rows.length))) : 4.8;
-  return finalizeLyricLineDurations(rows.map(function(line, i){
-    return { t: i * gap, duration: gap, text: line, source: 'custom-text', charCount: Math.max(1, line.length) };
-  }));
-}
-function applyCustomLyricState(song, silent) {
-  song = song || currentLyricSong();
-  var entry = getCustomLyricEntry(song);
-  if (!entry || !String(entry.text || '').trim()) {
-    if (!silent) openCustomLyricModal();
-    updateCustomLyricControls();
-    return false;
-  }
-  var lines = parseCustomLyricText(entry.text);
-  if (!lines.length) {
-    if (!silent) showToast('自定义歌词内容为空');
-    updateCustomLyricControls();
-    return false;
-  }
-  lyricSourceMode = 'custom';
-  lyricsHasNativeKaraoke = false;
-  lyricsTimingSource = lines[0] && lines[0].source === 'custom-lrc' ? 'custom-lrc' : 'custom-text';
-  lyricsLines = withLyricFallback(lines);
-  if (lyricsLines.length && lyricsLines[0].fallback) lyricsTimingSource = 'fallback';
-  renderLyrics();
-  updateCustomLyricControls();
-  return true;
-}
-function preferredLyricSourceForSong(song) {
-  var key = songCustomLyricKey(song);
-  var hasCustom = hasCustomLyricForSong(song);
-  if (!hasCustom) return 'original';
-  var pref = key ? customLyricPrefs[key] : '';
-  if (pref === 'custom') return 'custom';
-  if (pref === 'original') return 'original';
-  return (originalLyricsState.timingSource === 'fallback' || originalLyricsState.timingSource === 'none') ? 'custom' : 'original';
-}
-function applyPreferredLyricsForCurrent(silent) {
-  var song = currentLyricSong();
-  if (preferredLyricSourceForSong(song) === 'custom' && applyCustomLyricState(song, true)) return;
-  applyOriginalLyricsState();
-  if (!silent) updateCustomLyricControls();
-}
-function setLyricSourceMode(mode, silent) {
-  var song = currentLyricSong();
-  var key = songCustomLyricKey(song);
-  mode = mode === 'custom' ? 'custom' : 'original';
-  if (mode === 'custom') {
-    if (!applyCustomLyricState(song, true)) {
-      if (!silent) openCustomLyricModal();
-      return false;
-    }
-    if (!silent) openCustomLyricModal();
-  } else {
-    applyOriginalLyricsState();
-  }
-  if (key) {
-    customLyricPrefs[key] = mode;
-    saveCustomLyricPrefs();
-  }
-  if (!silent) showToast(mode === 'custom' ? '已切换到自定义歌词' : '已切换到原歌词');
-  updateCustomLyricControls();
-  return true;
-}
-function updateCustomLyricControls() {
-}
-function setCustomLyricStatus(text, tone) {
-  var el = document.getElementById('custom-lyric-status');
-  if (!el) return;
-  el.textContent = text || '';
-  el.classList.toggle('good', tone === 'good');
-  el.classList.toggle('fail', tone === 'fail');
-}
-function openCustomLyricModal() {
-  var song = currentLyricSong();
-  if (!song) {
-    showToast('先播放或选择一首歌');
-    return;
-  }
-  if (immersiveMode) setImmersiveMode(false);
-  var entry = getCustomLyricEntry(song);
-  var title = document.getElementById('custom-lyric-title');
-  var sub = document.getElementById('custom-lyric-sub');
-  var input = document.getElementById('custom-lyric-input');
-  if (title) title.textContent = song.name || '当前歌曲';
-  if (sub) sub.textContent = (song.artist || (song.type === 'podcast' ? 'Podcast' : '')) + (entry ? ' · 已保存自定义歌词' : ' · 可粘贴 LRC 或逐行输入');
-  if (input) input.value = entry ? (entry.text || '') : '';
-  setCustomLyricStatus(entry ? '已读取本地自定义歌词' : '提示：带 [00:12.00] 时间轴会更精准；纯文本会自动铺开', entry ? 'good' : '');
-  openGsapModal(document.getElementById('custom-lyric-modal'));
-  setTimeout(function(){ if (input) input.focus(); }, 120);
-}
-function closeCustomLyricModal() {
-  closeGsapModal(document.getElementById('custom-lyric-modal'));
-}
-function saveCustomLyricForCurrent() {
-  var song = currentLyricSong();
-  var key = songCustomLyricKey(song);
-  var input = document.getElementById('custom-lyric-input');
-  var text = input ? String(input.value || '').trim() : '';
-  if (!song || !key) {
-    setCustomLyricStatus('请先播放或选择一首歌', 'fail');
-    showToast('先播放或选择一首歌');
-    return;
-  }
-  if (!text) {
-    setCustomLyricStatus('请输入歌词内容', 'fail');
-    return;
-  }
-  var lines = parseCustomLyricText(text);
-  if (!lines.length) {
-    setCustomLyricStatus('没有识别到可显示的歌词行', 'fail');
-    return;
-  }
-  customLyricMap[key] = { text: text, updatedAt: Date.now() };
-  customLyricPrefs[key] = 'custom';
-  var saved = saveCustomLyricMap();
-  saveCustomLyricPrefs();
-  applyCustomLyricState(song, true);
-  setCustomLyricStatus(saved ? ('已保存 ' + lines.length + ' 行，并切换为自定义歌词') : '已应用，但本地存储空间不足', saved ? 'good' : 'fail');
-  showToast(saved ? '自定义歌词已保存' : '自定义歌词已应用');
-  setTimeout(function(){ closeCustomLyricModal(); }, 520);
-}
-function deleteCustomLyricForCurrent() {
-  var song = currentLyricSong();
-  var key = songCustomLyricKey(song);
-  if (!song || !key) {
-    setCustomLyricStatus('请先播放或选择一首歌', 'fail');
-    return;
-  }
-  if (!customLyricMap[key]) {
-    setCustomLyricStatus('当前歌曲没有自定义歌词', 'fail');
-    return;
-  }
-  delete customLyricMap[key];
-  delete customLyricPrefs[key];
-  saveCustomLyricMap();
-  saveCustomLyricPrefs();
-  applyOriginalLyricsState();
-  var input = document.getElementById('custom-lyric-input');
-  if (input) input.value = '';
-  setCustomLyricStatus('已删除，恢复原歌词', 'good');
-  showToast('已恢复原歌词');
 }
 function cloneSong(song){ return Object.assign({}, song); }
 function avatarSrc(url) {
@@ -13353,9 +13137,7 @@ async function playQueueAt(idx, opts) {
   });
   markPlayPhase('lyric-prep');
   safePlaybackStep('lyric-prep', function(){
-    var initialLyricLines = withLyricFallback([]);
-    setOriginalLyricsState(initialLyricLines, false, 'fallback');
-    applyPreferredLyricsForCurrent(true);
+    applyLyricsState([], false, 'none');
   });
 
   markPlayPhase('cover-load');
@@ -13488,16 +13270,6 @@ async function playQueueAt(idx, opts) {
     }
     forcePlaybackControlsInteractive();
     markPlayPhase('session-begin');
-    markPlayPhase('lyrics-fetch');
-    if (song.type === 'podcast') {
-      safePlaybackStep('podcast-lyrics', function(){
-        var podcastLyricLines = withLyricFallback([]);
-        setOriginalLyricsState(podcastLyricLines, false, 'fallback');
-        applyPreferredLyricsForCurrent(true);
-      });
-    } else {
-      fetchLyric(song, token);
-    }
     safeRenderQueuePanel('play-queue-at');
     scheduleShelfRebuild('play-queue-at', true);
     safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
@@ -13623,7 +13395,6 @@ function clearQueue() {
   playQueue = []; currentIdx = -1;
   safeRenderQueuePanel('clear-queue');
   safeShelfRebuild('clear-queue');
-  updateCustomLyricControls();
 }
 function removeFromQueue(idx) {
   if (idx < 0 || idx >= playQueue.length) return;
@@ -13631,7 +13402,6 @@ function removeFromQueue(idx) {
   if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;
   safeRenderQueuePanel('remove-queue-item');
   safeShelfRebuild('remove-queue-item');
-  updateCustomLyricControls();
 }
 function playModeLabel(mode) {
   return { loop: '顺序循环', shuffle: '随机播放', single: '单曲循环' }[mode] || '顺序循环';
@@ -13903,36 +13673,6 @@ function clearPlayerControlFocusState(reason) {
 // ============================================================
 //  歌词
 // ============================================================
-async function fetchLyric(songOrId, token) {
-  try {
-    var song = (songOrId && typeof songOrId === 'object') ? songOrId : null;
-    var provider = songProviderKey(song);
-    var endpoint;
-    if (provider === 'qq') {
-      var mid = song.mid || song.songmid || song.id || '';
-      var qqId = song.qqId || (/^\d+$/.test(String(song.id || '')) ? song.id : '');
-      endpoint = '/api/qq/lyric?mid=' + encodeURIComponent(mid) + '&id=' + encodeURIComponent(qqId);
-    } else {
-      var songId = song ? song.id : songOrId;
-      endpoint = '/api/lyric?id=' + encodeURIComponent(songId);
-    }
-    var r = await apiJson(endpoint);
-    if (token !== trackSwitchToken) return;
-    var nativeLines = parseYrcText(r.yrc || '');
-    var lrcLines = parseLyricText(r.lyric || '');
-    var hasNativeKaraoke = nativeLines.some(function(line){ return line.words && line.words.length; });
-    var timingSource = hasNativeKaraoke ? 'yrc-word' : (nativeLines.length ? 'yrc-line' : (lrcLines.length ? 'lrc-line' : 'fallback'));
-    var lines = withLyricFallback(nativeLines.length ? nativeLines : lrcLines);
-    if (!lines.length) timingSource = 'none';
-    else if (lines[0].fallback) timingSource = 'fallback';
-    setOriginalLyricsState(lines, hasNativeKaraoke, timingSource);
-    applyPreferredLyricsForCurrent(true);
-  } catch (e) {
-    if (token !== trackSwitchToken) return;
-    setOriginalLyricsState([], false, 'none');
-    applyPreferredLyricsForCurrent(true);
-  }
-}
 function isNoLyricText(text) {
   var compact = String(text || '').replace(/\s+/g, '').replace(/[，,。.!！?？、~～]/g, '');
   return !compact ||
@@ -13940,75 +13680,6 @@ function isNoLyricText(text) {
     compact === '暂无歌词' ||
     compact === '暂无歌词敬请期待' ||
     compact === '此歌曲为没有填词的纯音乐请您欣赏';
-}
-function withLyricFallback(lines) {
-  return (Array.isArray(lines) ? lines : []).filter(function(line){
-    return line && String(line.text || '').trim() && !isNoLyricText(line.text);
-  });
-}
-function lyricTagTimeToSeconds(min, sec, frac) {
-  var t = (parseInt(min, 10) || 0) * 60 + (parseInt(sec, 10) || 0);
-  if (frac) t += (parseInt(frac, 10) || 0) / Math.pow(10, Math.min(3, frac.length));
-  return t;
-}
-function finalizeLyricLineDurations(lines) {
-  lines.sort(function(a, b){ return a.t - b.t; });
-  for (var i = 0; i < lines.length; i++) {
-    var next = lines[i + 1];
-    var inferred = next && next.t > lines[i].t ? next.t - lines[i].t : 4.8;
-    if (!isFinite(lines[i].duration) || lines[i].duration <= 0) lines[i].duration = inferred;
-    lines[i].duration = Math.max(0.45, Math.min(12, lines[i].duration));
-    lines[i].charCount = Math.max(1, lines[i].charCount || String(lines[i].text || '').length);
-  }
-  return lines;
-}
-function parseLyricText(text) {
-  var lines = [], reg = /\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\]/g;
-  text.split(/\r?\n/).forEach(function(line){
-    var times = [], m;
-    reg.lastIndex = 0;
-    while ((m = reg.exec(line))) times.push(lyricTagTimeToSeconds(m[1], m[2], m[3]));
-    if (!times.length) return;
-    var txt = line.replace(reg, '').trim();
-    if (!txt) return;
-    times.forEach(function(t){ lines.push({ t: t, text: txt, source:'lrc' }); });
-  });
-  return finalizeLyricLineDurations(lines);
-}
-function parseYrcText(text) {
-  var lines = [];
-  String(text || '').split(/\r?\n/).forEach(function(line){
-    var m = line.match(/^\[(\d+),(\d+)\](.*)$/);
-    if (!m) return;
-    var lineStartMs = parseInt(m[1], 10) || 0;
-    var lineDurMs = parseInt(m[2], 10) || 0;
-    var body = m[3] || '';
-    var words = [], fullText = '';
-    var reg = /\((\d+),(\d+),\d+\)([^()]*)/g, wm;
-    while ((wm = reg.exec(body))) {
-      var txt = (wm[3] || '').replace(/\s+/g, ' ');
-      if (!txt) continue;
-      var rawStart = parseInt(wm[1], 10) || 0;
-      var rawDur = parseInt(wm[2], 10) || 0;
-      var absStartMs = rawStart >= lineStartMs - 500 ? rawStart : lineStartMs + rawStart;
-      var c0 = fullText.length;
-      fullText += txt;
-      words.push({ text:txt, t:absStartMs / 1000, d:Math.max(0.06, rawDur / 1000), c0:c0, c1:fullText.length });
-    }
-    if (!fullText) fullText = body.replace(/\(\d+,\d+,\d+\)/g, '').replace(/\s+/g, ' ');
-    var leading = (fullText.match(/^\s+/) || [''])[0].length;
-    fullText = fullText.replace(/\s+/g, ' ').trim();
-    if (!fullText) return;
-    if (words.length) {
-      words.forEach(function(w){
-        w.c0 = Math.max(0, Math.min(fullText.length, w.c0 - leading));
-        w.c1 = Math.max(w.c0, Math.min(fullText.length, w.c1 - leading));
-      });
-      words = words.filter(function(w){ return w.c1 > w.c0; });
-    }
-    lines.push({ t:lineStartMs / 1000, duration:lineDurMs / 1000, text:fullText, words:words, characters:words.map(function(w){ return Object.assign({}, w); }), charCount:Math.max(1, fullText.length), source: words.length ? 'yrc-word' : 'yrc-line' });
-  });
-  return finalizeLyricLineDurations(lines);
 }
 function renderLyrics() {
   // v8: 歌词渲染由 stageLyrics 在每帧 tickLyricsParticles 里推动
@@ -16409,7 +16080,6 @@ function updateImmersiveButton() {
 
 function closeImmersiveInterference() {
   closeMiniQueue();
-  closeCustomLyricModal();
   if (!localBeatAnalysis.active) closeLocalBeatModal();
   ['search-area', 'trial-banner', 'ai-depth-chip', 'beat-chip'].forEach(function(id){
     var el = document.getElementById(id);
@@ -17058,7 +16728,6 @@ function closeGsapModal(mask, afterClose) {
 }
 function bindModalBackdropClose() {
   [
-    ['custom-lyric-modal', closeCustomLyricModal],
     ['update-modal', closeUpdatePanel]
   ].forEach(function(pair){
     var mask = document.getElementById(pair[0]);
@@ -18261,12 +17930,6 @@ document.addEventListener('keydown', function(e){
       else closeLocalBeatModal();
       return;
     }
-    var customLyricModal = document.getElementById('custom-lyric-modal');
-    if (customLyricModal && customLyricModal.classList.contains('show')) {
-      e.preventDefault();
-      closeCustomLyricModal();
-      return;
-    }
     if (miniQueueOpen) { closeMiniQueue(); return; }
     if (shelfManager && shelfManager.hasOpenContent()) { safeShelfCloseContent('escape-key'); return; }
     togglePlaylistPanel(false);
@@ -18656,17 +18319,7 @@ if (fx.particleLyrics) createLyricsParticles();
 if (fx.backCover) createBackCoverLayer();
 initIdleGuideCanvas();
 maybeRunStartupVisualGuide('status');
-var customLyricInput = document.getElementById('custom-lyric-input');
-if (customLyricInput) {
-  customLyricInput.addEventListener('keydown', function(e){
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      saveCustomLyricForCurrent();
-    }
-  });
-}
 safeRenderQueuePanel('startup');
-updateCustomLyricControls();
 setTimeout(initUpdatePreview, 9000);
 
 

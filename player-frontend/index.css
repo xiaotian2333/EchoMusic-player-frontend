@@ -478,17 +478,6 @@ body.immersive-mode::after{content:'';position:fixed;left:0;right:0;bottom:0;hei
 .local-beat-status.warn{color:#f4d28a}
 .local-beat-status.fail{color:#ff8f9d}
 .local-beat-modal.analyzing .local-beat-tab{pointer-events:none;opacity:.64}
-.custom-lyric-modal{width:min(560px,92vw);max-width:min(560px,92vw);padding:28px;text-align:left}
-.custom-lyric-modal h2{text-align:center;margin-bottom:14px}
-.custom-lyric-track{padding:11px 12px;margin-bottom:12px;border-radius:12px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035)}
-.custom-lyric-title{font-size:13px;color:rgba(255,255,255,.92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.custom-lyric-sub{margin-top:3px;font-size:10.5px;color:rgba(255,255,255,.42)}
-.custom-lyric-input{width:100%;height:min(310px,42vh);resize:vertical;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);color:rgba(255,255,255,.92);padding:13px 14px;font-family:'Inter','PingFang SC','Microsoft YaHei',sans-serif;font-size:12.5px;line-height:1.65;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
-.custom-lyric-input:focus{border-color:rgba(244,210,138,.42);background:rgba(244,210,138,.055)}
-.custom-lyric-input::placeholder{color:rgba(255,255,255,.28)}
-.custom-lyric-status{min-height:18px;margin-top:9px;font-size:11.5px;color:rgba(255,255,255,.45);letter-spacing:.2px}
-.custom-lyric-status.good{color:rgba(126,226,168,.86)}
-.custom-lyric-status.fail{color:#ff8f9d}
 /* ---------- 加载 ---------- */
 #loading-overlay{position:fixed;inset:0;z-index:40;pointer-events:none;display:none}
 #loading-overlay.show{display:block}
@@ -829,14 +818,14 @@ body.desktop-shell.controls-visible #fx-fab{bottom:126px}
 #play-btn{border:0!important;background:rgba(0,0,0,.10)!important;box-shadow:inset 0 0 2px 1px rgba(255,255,255,.34),inset 0 0 10px 4px rgba(255,255,255,.13),0 10px 30px rgba(0,0,0,.18)!important}
 #play-btn:hover{background:rgba(255,255,255,.055)!important;box-shadow:inset 0 0 2px 1px rgba(255,255,255,.42),inset 0 0 12px 5px rgba(255,255,255,.17),0 12px 34px rgba(0,0,0,.22),0 0 18px rgba(var(--fc-accent-rgb),.10)!important;color:#fff}
 /* Unified saved glass: keep panels in the same texture as the player bar. */
-#search-box,#search-results,.search-mode-tabs,#fx-panel,#playlist-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.modal.update-modal,.cover-color-pop,.color-lab-pop,.visual-guide-card,.volume-popover,.mini-queue-popover,.pl-inline-detail,.local-beat-track,.custom-lyric-track{
+#search-box,#search-results,.search-mode-tabs,#fx-panel,#playlist-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.modal.update-modal,.cover-color-pop,.color-lab-pop,.visual-guide-card,.volume-popover,.mini-queue-popover,.pl-inline-detail,.local-beat-track{
   background:var(--saved-panel-glass-bg)!important;
   border-color:transparent!important;
   box-shadow:var(--saved-panel-glass-shadow)!important;
   backdrop-filter:var(--saved-panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--saved-panel-glass-filter)!important;
 }
-html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,html.control-glass-svg-ok .search-mode-tabs,html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #playlist-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .modal.update-modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .visual-guide-card,html.control-glass-svg-ok .volume-popover,html.control-glass-svg-ok .mini-queue-popover,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track,html.control-glass-svg-ok .custom-lyric-track{
+html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,html.control-glass-svg-ok .search-mode-tabs,html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #playlist-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .modal.update-modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .visual-guide-card,html.control-glass-svg-ok .volume-popover,html.control-glass-svg-ok .mini-queue-popover,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
   backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
 }
@@ -901,14 +890,14 @@ html.control-glass-svg-ok .icon-btn,html.control-glass-svg-ok #fx-fab,html.contr
   --panel-glass-shadow:0 24px 78px rgba(0,0,0,.44),0 0 0 1px rgba(255,255,255,.045),inset 0 1px 0 rgba(255,255,255,.18),inset 0 -18px 42px rgba(0,0,0,.16);
   --panel-button-bg:linear-gradient(145deg,rgba(255,255,255,.075),rgba(var(--fc-accent-rgb),.060) 46%,rgba(0,0,0,.14));
 }
-#search-box,#search-results,.search-mode-tabs,#fx-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.modal.update-modal,.cover-color-pop,.color-lab-pop,.visual-guide-card,.pl-inline-detail,.local-beat-track,.custom-lyric-track{
+#search-box,#search-results,.search-mode-tabs,#fx-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.modal.update-modal,.cover-color-pop,.color-lab-pop,.visual-guide-card,.pl-inline-detail,.local-beat-track{
   background:var(--panel-glass-bg)!important;
   border-color:rgba(255,255,255,.075)!important;
   box-shadow:var(--panel-glass-shadow)!important;
   backdrop-filter:var(--panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--panel-glass-filter)!important;
 }
-html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,html.control-glass-svg-ok .search-mode-tabs,html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .modal.update-modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .visual-guide-card,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track,html.control-glass-svg-ok .custom-lyric-track{
+html.control-glass-svg-ok #search-box,html.control-glass-svg-ok #search-results,html.control-glass-svg-ok .search-mode-tabs,html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .modal.update-modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .visual-guide-card,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
   backdrop-filter:var(--panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--panel-glass-filter)!important;
 }
