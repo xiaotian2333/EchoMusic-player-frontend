@@ -13520,37 +13520,70 @@ function toggleVolumePanel(e) {
   if (wrap) wrap.classList.toggle('open');
 }
 
-function toggleMute() {
-  setVolume(targetVolume > 0.01 ? 0 : (lastNonZeroVolume || 0.8));
+function keepVolumePanelOpen() {
+  var wrap = document.getElementById('volume-control');
+  if (volumeCloseTimer) { clearTimeout(volumeCloseTimer); volumeCloseTimer = null; }
+  if (wrap) wrap.classList.add('open');
+}
+
+function closeVolumePanelSoon() {
+  var wrap = document.getElementById('volume-control');
+  if (volumeCloseTimer) clearTimeout(volumeCloseTimer);
+  volumeCloseTimer = setTimeout(function(){
+    volumeCloseTimer = null;
+    if (wrap) wrap.classList.remove('open');
+  }, 520);
+}
+
+function volumeWheelDelta(e) {
+  if (!e || !isFinite(e.deltaY) || e.deltaY === 0) return 0;
+  var normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
+  var platform = String(navigator.platform || '').toLowerCase();
+  var direction = platform.indexOf('mac') >= 0 ? 1 : -1;
+  return (normalized / 120) * 0.05 * direction;
+}
+
+function targetVolumeAfterWheel(e) {
+  var delta = volumeWheelDelta(e);
+  if (!delta) return targetVolume;
+  return clampRange(targetVolume + delta, 0, 1);
+}
+
+function handleVolumeWheel(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  var next = targetVolumeAfterWheel(e);
+  if (Math.abs(next - targetVolume) <= 0.0001) {
+    keepVolumePanelOpen();
+    return;
+  }
+  keepVolumePanelOpen();
+  setVolume(next, true);
+}
+
+function toggleMute(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  setVolume(targetVolume > 0.01 ? 0 : (lastNonZeroVolume || 0.8), true);
 }
 
 function bindVolumeControls() {
   var slider = document.getElementById('volume-slider');
-  var btn = document.getElementById('volume-btn');
   var wrap = document.getElementById('volume-control');
-  function keepVolumePanelOpen() {
-    if (volumeCloseTimer) { clearTimeout(volumeCloseTimer); volumeCloseTimer = null; }
-    if (wrap) wrap.classList.add('open');
-  }
-  function closeVolumePanelSoon() {
-    if (volumeCloseTimer) clearTimeout(volumeCloseTimer);
-    volumeCloseTimer = setTimeout(function(){
-      volumeCloseTimer = null;
-      if (wrap) wrap.classList.remove('open');
-    }, 520);
-  }
   if (wrap) {
     wrap.addEventListener('mouseenter', keepVolumePanelOpen);
     wrap.addEventListener('mouseleave', closeVolumePanelSoon);
+    wrap.addEventListener('wheel', handleVolumeWheel, { passive: false });
   }
   if (slider) {
     slider.addEventListener('input', function(){ setVolume(slider.value, true); });
     slider.addEventListener('focus', keepVolumePanelOpen);
     slider.addEventListener('blur', closeVolumePanelSoon);
     slider.addEventListener('change', function(){ showToast('音量 ' + Math.round(targetVolume * 100) + '%'); });
-  }
-  if (btn) {
-    btn.addEventListener('dblclick', function(e){ e.stopPropagation(); toggleMute(); });
   }
   document.addEventListener('click', function(e){
     if (!wrap) return;
@@ -20378,6 +20411,37 @@ function startMainLoopSafely() {
         e.stopPropagation();
         command('volume', { value: Number(volume.value || 0) });
       }, true);
+    }
+
+    function commitBridgeVolume(value) {
+      var next = clamp01(value);
+      targetVolume = next;
+      if (next > 0.01) lastNonZeroVolume = next;
+      if (typeof updateVolumeUi === 'function') updateVolumeUi();
+      command('volume', { value: next });
+    }
+
+    var volumeButton = document.getElementById('volume-btn');
+    if (volumeButton && !volumeButton.__echoBridgeMuteBound) {
+      volumeButton.__echoBridgeMuteBound = true;
+      volumeButton.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        commitBridgeVolume(targetVolume > 0.01 ? 0 : (lastNonZeroVolume || 0.8));
+      }, true);
+    }
+
+    var volumeWrap = document.getElementById('volume-control');
+    if (volumeWrap && !volumeWrap.__echoBridgeWheelBound) {
+      volumeWrap.__echoBridgeWheelBound = true;
+      volumeWrap.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        if (typeof keepVolumePanelOpen === 'function') keepVolumePanelOpen();
+        commitBridgeVolume(targetVolumeAfterWheel(e));
+      }, { capture: true, passive: false });
     }
   }
 
