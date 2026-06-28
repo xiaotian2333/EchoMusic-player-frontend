@@ -47,23 +47,6 @@
 
 <div id="hint" aria-hidden="true"></div>
 
-<!-- 顶部搜索 -->
-<div id="search-area">
-  <div id="search-stack">
-    <div id="search-box">
-      <svg id="search-icon" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input id="search-input" type="text" placeholder="搜索歌曲、歌手..." autocomplete="off" spellcheck="false">
-    </div>
-    <div id="search-mode-tabs" class="search-mode-tabs" role="tablist" aria-label="Search mode">
-      <button id="search-mode-song" class="active" type="button" onclick="setSearchMode('song')" aria-selected="true">All</button>
-      <button id="search-mode-netease" type="button" onclick="setSearchMode('netease')" aria-selected="false">NE</button>
-      <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
-      <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')" aria-selected="false">Podcast</button>
-    </div>
-    <div id="search-results"></div>
-  </div>
-</div>
-
 <button id="fx-fab" type="button" onclick="toggleFxPanel()" title="视觉控制台">
   <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 7h8"/><path d="M16 7h4"/><circle cx="14" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
 </button>
@@ -367,42 +350,6 @@
       <feBlend in="rg" in2="blue" mode="screen" result="output"></feBlend>
       <feGaussianBlur in="output" stdDeviation="0.5"></feGaussianBlur>
     </filter>
-    <filter id="mineradio-search-box-glass-filter" color-interpolation-filters="sRGB" x="-24%" y="-34%" width="158%" height="168%">
-      <feImage id="search-box-glass-map" x="-10%" y="-4%" width="120%" height="108%" preserveAspectRatio="none" result="map"></feImage>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="180" xChannelSelector="R" yChannelSelector="B" result="dispRed"></feDisplacementMap>
-      <feOffset in="dispRed" dx="-90" dy="0" result="dispRedShifted"></feOffset>
-      <feMerge result="dispRedAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispRedShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispRedAligned" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"></feColorMatrix>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="170" xChannelSelector="R" yChannelSelector="B" result="dispGreen"></feDisplacementMap>
-      <feOffset in="dispGreen" dx="-90" dy="0" result="dispGreenShifted"></feOffset>
-      <feMerge result="dispGreenAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispGreenShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispGreenAligned" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"></feColorMatrix>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="160" xChannelSelector="R" yChannelSelector="B" result="dispBlue"></feDisplacementMap>
-      <feOffset in="dispBlue" dx="-90" dy="0" result="dispBlueShifted"></feOffset>
-      <feMerge result="dispBlueAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispBlueShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispBlueAligned" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"></feColorMatrix>
-      <feBlend in="red" in2="green" mode="screen" result="rg"></feBlend>
-      <feBlend in="rg" in2="blue" mode="screen" result="output"></feBlend>
-      <feGaussianBlur in="output" stdDeviation="0.5"></feGaussianBlur>
-    </filter>
-    <filter id="mineradio-search-pill-glass-filter" color-interpolation-filters="sRGB" x="-48%" y="-68%" width="210%" height="236%">
-      <feImage id="search-pill-glass-map" x="-24%" y="-14%" width="148%" height="128%" preserveAspectRatio="none" result="map"></feImage>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="118" xChannelSelector="R" yChannelSelector="B" result="dispRed"></feDisplacementMap>
-      <feOffset in="dispRed" dx="-34" dy="0" result="dispRedShifted"></feOffset>
-      <feMerge result="dispRedAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispRedShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispRedAligned" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"></feColorMatrix>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="108" xChannelSelector="R" yChannelSelector="B" result="dispGreen"></feDisplacementMap>
-      <feOffset in="dispGreen" dx="-34" dy="0" result="dispGreenShifted"></feOffset>
-      <feMerge result="dispGreenAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispGreenShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispGreenAligned" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"></feColorMatrix>
-      <feDisplacementMap in="SourceGraphic" in2="map" scale="100" xChannelSelector="R" yChannelSelector="B" result="dispBlue"></feDisplacementMap>
-      <feOffset in="dispBlue" dx="-34" dy="0" result="dispBlueShifted"></feOffset>
-      <feMerge result="dispBlueAligned"><feMergeNode in="SourceGraphic"></feMergeNode><feMergeNode in="dispBlueShifted"></feMergeNode></feMerge>
-      <feColorMatrix in="dispBlueAligned" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"></feColorMatrix>
-      <feBlend in="red" in2="green" mode="screen" result="rg"></feBlend>
-      <feBlend in="rg" in2="blue" mode="screen" result="output"></feBlend>
-      <feGaussianBlur in="output" stdDeviation="0.35"></feGaussianBlur>
-    </filter>
   </defs>
 </svg>
 <button id="bottom-handle" type="button" aria-label="展开播放器控制台" title="播放器控制台"><span></span></button>
@@ -511,7 +458,7 @@
 <div id="toast"></div>
 <div id="source-fallback-notice" aria-live="polite">
   <div class="source-fallback-head">
-    <div id="source-fallback-title" class="source-fallback-title">自动换源</div>
+    <div id="source-fallback-title" class="source-fallback-title">播放提示</div>
     <button class="source-fallback-close" type="button" onclick="closeSourceFallbackNotice()">×</button>
   </div>
   <div id="source-fallback-body" class="source-fallback-body"></div>
