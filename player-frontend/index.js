@@ -7358,13 +7358,8 @@ function normalizeBeatPrefetchState(state) {
 }
 
 async function fetchBeatPrefetchAudioUrl(song) {
-  if (!song) return null;
-  var isQQ = songProviderKey(song) === 'qq';
-  var data = isQQ
-    ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || ''))
-    : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id));
-  if (!data || !data.url || data.trial) return null;
-  return '/api/audio?url=' + encodeURIComponent(data.url);
+  // 在线音乐源已移除，插件不再为旧独立队列预取平台音频。
+  return null;
 }
 
 function scheduleQueueBeatPrefetch(fromIdx, delayMs, state) {
@@ -8206,14 +8201,6 @@ function schedulePodcastDjAnalysis(songKey, audioUrl, token, durationSec) {
         djBeatAnalysisTimer = setTimeout(waitForDjStart, 900);
         return;
       }
-      if (/^https?:\/\//i.test(audioUrl || '') && (durationSec <= 0 || durationSec > 3300)) {
-        analyzePodcastDjIntroBeats(audioUrl, token, durationSec).then(function(map){
-          if (token !== djBeatMapToken || !map) return;
-          smoothPodcastDjIntroHandoff(songKey, map, token);
-        }).catch(function(err){
-          console.warn('podcast DJ intro beat analysis failed:', err);
-        });
-      }
       analyzePodcastDjBeats(audioUrl, token, durationSec).then(function(map){
         if (token !== djBeatMapToken || !map) return;
         smoothPodcastDjMapHandoff(songKey, map, token);
@@ -8227,14 +8214,7 @@ function schedulePodcastDjAnalysis(songKey, audioUrl, token, durationSec) {
 }
 
 async function analyzePodcastDjIntroBeats(audioUrl, token, durationSec) {
-  if (!/^https?:\/\//i.test(audioUrl || '')) return null;
-  if (token !== djBeatMapToken || !djMode.active) return null;
-  var introResp = await fetch('/api/podcast/dj-beatmap?url=' + encodeURIComponent(audioUrl) + '&duration=' + encodeURIComponent(durationSec || 0) + '&intro=180');
-  if (token !== djBeatMapToken || !djMode.active) return null;
-  var introData = await introResp.json().catch(function(){ return null; });
-  if (introResp.ok && introData && introData.ok && introData.map && introData.map.cameraBeats && introData.map.cameraBeats.length >= 4) {
-    return introData.map;
-  }
+  // 在线播客后端锁拍已移除。
   return null;
 }
 
@@ -8614,18 +8594,11 @@ async function analyzePodcastDjBeats(audioUrl, token, durationSec) {
     await yieldToIdle(520);
     if (token !== djBeatMapToken || !djMode.active) { hideBeatChip(); return null; }
     durationSec = Math.max(0, Number(durationSec) || 0);
-    var preferServerAnalysis = /^https?:\/\//i.test(audioUrl || '') && (durationSec <= 0 || durationSec > 3300);
-    if (preferServerAnalysis) {
-      showBeatChip('DJ 长播客后端锁拍...');
-      var serverResp = await fetch('/api/podcast/dj-beatmap?url=' + encodeURIComponent(audioUrl) + '&duration=' + encodeURIComponent(durationSec));
-      if (token !== djBeatMapToken || !djMode.active) { hideBeatChip(); return null; }
-      var serverData = await serverResp.json().catch(function(){ return null; });
-      if (serverResp.ok && serverData && serverData.ok && serverData.map) return serverData.map;
-      console.warn('podcast DJ server analysis failed:', serverData && serverData.error);
+    if (/^https?:\/\//i.test(audioUrl || '')) {
       hideBeatChip();
-      if (durationSec <= 0 || durationSec > 3300) return null;
+      return null;
     }
-    var fetchAudioUrl = /^https?:\/\//i.test(audioUrl || '') ? ('/api/audio?url=' + encodeURIComponent(audioUrl)) : audioUrl;
+    var fetchAudioUrl = audioUrl;
     var resp = await fetch(fetchAudioUrl);
     if (token !== djBeatMapToken || !djMode.active) { hideBeatChip(); return null; }
     var ab = await resp.arrayBuffer();
@@ -9957,25 +9930,9 @@ function makeShelfManager() {
     if (card.isCenter) {
       var actionY = H - pad - 78;
       if (item.type === 'playlist') {
-        makeRoundRect(ctx, tx, actionY, 138, 38, 18);
-        var playGrad = ctx.createLinearGradient(tx, actionY, tx + 138, actionY + 38);
-        playGrad.addColorStop(0, 'rgba(255,255,255,0.88)');
-        playGrad.addColorStop(0.55, shelfAccentRgba(0.94));
-        playGrad.addColorStop(1, shelfAccentRgba(0.58));
-        ctx.fillStyle = playGrad; ctx.fill();
-        ctx.strokeStyle = shelfAccentRgba(0.44);
-        ctx.lineWidth = 1.1; ctx.stroke();
         ctx.font = '800 14px Inter, "Microsoft YaHei", Arial';
-        ctx.fillStyle = readableInkForHex(shelfAccentHex());
-        ctx.fillText('▶ 播放歌单', tx + 25, actionY + 24);
-
-        makeRoundRect(ctx, tx + 150, actionY, 104, 38, 18);
-        ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-        ctx.lineWidth = 1.1; ctx.stroke();
-        ctx.font = '700 14px Inter, "Microsoft YaHei", Arial';
-        ctx.fillStyle = 'rgba(255,255,255,0.78)';
-        ctx.fillText('详情', tx + 184, actionY + 24);
+        ctx.fillStyle = 'rgba(255,255,255,0.58)';
+        ctx.fillText('在线歌单已移除', tx, actionY + 25);
       } else if (item.type === 'queue') {
         ctx.font = '600 14px Inter, "Microsoft YaHei", Arial';
         ctx.fillStyle = shelfAccentRgba(0.84);
@@ -10004,9 +9961,7 @@ function makeShelfManager() {
     var geo = new THREE.PlaneGeometry(2.05, 1.025, 1, 1);
     var mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 50 + i;
-    mesh.userData.action = item.type === 'playlist'
-      ? { kind:'loadPlaylist', playlistId: item.playlistId, title: item.title }
-      : (item.type === 'queue' ? { kind:'playQueue', index: item.queueIndex } : { kind:'empty' });
+    mesh.userData.action = item.type === 'queue' ? { kind:'playQueue', index: item.queueIndex } : { kind:'empty' };
     group.add(mesh);
     var card = { canvas: cv, ctx: ctx, texture: tx, mesh: mesh, item: item, index: i, isCenter: false, selected: i === selectedIdx, floatMix: 0, fxPulse: 0, dofBlur: 0, dofBucket: -1, drawKey: '' };
     return card;
@@ -10263,15 +10218,8 @@ function makeShelfManager() {
   }
 
   function playPlaylistCard(card) {
-    if (!card || !card.mesh || !card.mesh.userData) return false;
-    var action = card.mesh.userData.action;
-    if (!action || action.kind !== 'loadPlaylist' || !action.playlistId) return false;
-    pulseCard(card, 1.05);
-    if (contentList && contentList.isOpen && contentList.isOpen()) contentList.close();
-    openCardIdx = -1;
-    setShelfPinnedOpen(false, true);
-    if (typeof setFocusZone === 'function') setFocusZone(null, true);
-    loadPlaylistIntoQueueById(action.playlistId, true, action.title || (card.item && card.item.title) || '');
+    if (card) pulseCard(card, 1.05);
+    showToast('在线歌单功能已移除，请在 EchoMusic 中管理播放队列');
     return true;
   }
 
@@ -10659,7 +10607,7 @@ document.addEventListener('mouseout', function(e) {
 });
 
 // ============================================================
-//  二级内容框 (歌单内的歌曲列表) — 同样 PSP 风格滚动
+//  二级内容框 (旧在线歌单内容已移除) — 同样 PSP 风格滚动
 // ============================================================
 function makeContentListManager() {
   var group = null;
@@ -10735,7 +10683,7 @@ function makeContentListManager() {
     ctx.stroke();
     ctx.font = '800 38px Inter, "Microsoft YaHei", Arial';
     ctx.fillStyle = 'rgba(255,246,220,0.94)';
-    ctx.fillText(ellipsize(ctx, playlistTitle || '歌单详情', W - 310), 72, 92);
+    ctx.fillText(ellipsize(ctx, playlistTitle || '队列详情', W - 310), 72, 92);
     ctx.font = '500 18px Inter, "Microsoft YaHei", Arial';
     ctx.fillStyle = canvasAccent(0.62);
     var playableCount = allTracks.filter(function(song){ return song && song.id && song.type !== 'podcast-radio'; }).length;
@@ -10869,7 +10817,7 @@ function makeContentListManager() {
     if (loadingRow) {
       ctx.font = '700 22px Inter, "Microsoft YaHei", Arial';
       ctx.fillStyle = 'rgba(255,247,224,0.88)';
-      ctx.fillText('正在载入歌单', textX, 42);
+      ctx.fillText('正在更新队列', textX, 42);
       var phase = ((uniforms.uTime.value || 0) * 0.85) % 1;
       for (var sk = 0; sk < 3; sk++) {
         var barY = 58 + sk * 13;
@@ -11111,43 +11059,12 @@ function makeContentListManager() {
       } catch (renderLoadingErr) {
         console.warn('[ShelfContentLoadingRender]', playlistId, renderLoadingErr);
       }
-      var qqPlaylistId = String(playlistId || '').indexOf('qq:') === 0 ? String(playlistId).slice(3) : '';
-      contentKind = 'playlist';
-      // 拉取歌单内容
-      var r = null;
-      try {
-        r = qqPlaylistId
-          ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(qqPlaylistId))
-          : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(playlistId));
-      } catch (e) {
-        if (!open || token !== requestToken) return;
-        console.warn('[ShelfContentLoadApi]', playlistId, e);
-        try {
-          allTracks = [{ name: '歌单加载失败', artist: '' }];
-          panelDirty = true;
-          rowsDirty = true;
-          startRowsLoadedIntro();
-          syncRenderedRows(true);
-        } catch (renderErrorErr) {
-          console.warn('[ShelfContentErrorRender]', playlistId, renderErrorErr);
-        }
-        showToast('歌单加载失败');
-        return;
-      }
       if (!open || token !== requestToken) return;
       try {
-        // 清 loading
+        // 在线歌单入口已移除，仅保留宿主队列展示。
         disposeRows();
-        var tracks = r.tracks || [];
-        if (!tracks.length) {
-          allTracks = [{ name: '歌单为空', artist: '' }];
-          panelDirty = true;
-          rowsDirty = true;
-          startRowsLoadedIntro();
-          syncRenderedRows(true);
-          return;
-        }
-        allTracks = tracks;
+        contentKind = 'playlist';
+        allTracks = [{ name: '在线歌单已移除', artist: '请在 EchoMusic 中管理播放队列' }];
         centerTarget = 0; centerSmooth = 0;
         panelDirty = true;
         rowsDirty = true;
@@ -11155,7 +11072,7 @@ function makeContentListManager() {
         syncRenderedRows(true);
       } catch (renderReadyErr) {
         console.warn('[ShelfContentReadyRender]', playlistId, renderReadyErr);
-        showToast('歌单已载入，3D列表刷新失败');
+        showToast('在线歌单已移除');
       }
     },
     close: function() {
@@ -11392,7 +11309,7 @@ function makeContentListManager() {
       return null;
     },
     playRow: function(row) {
-      // 把整个歌单导入队列, 从这首开始播
+      // 旧在线歌单播放入口已移除。
       pulseObjectValue(row, 'fxPulse', 1.0, 0.34);
       var idx = row.index;
       if (idx < 0) return;
@@ -11478,7 +11395,7 @@ function requestPlaylistCover(url, cb) {
 // ============================================================
 //  3D 卡片交互 - PSP 风格
 //   - 滚轮: 滚动 center 卡 (一级或二级)
-//   - 点击 center 卡: 打开内容框 (歌单) 或 播放 (队列)
+//   - 点击 center 卡: 播放队列
 //   - 点击两侧卡: 滚到那张
 //   - ESC: 关闭内容框
 // ============================================================
@@ -11542,8 +11459,7 @@ function updateShelfCardHoverSelection(e) {
   else shelfManager.clearSelected();
 }
 function isShelfPlaylistPlayHit(hit) {
-  if (!hit || !hit.card || !hit.uv || !hit.card.item || hit.card.item.type !== 'playlist') return false;
-  return hit.uv.x >= 0.49 && hit.uv.x <= 0.72 && hit.uv.y >= 0.13 && hit.uv.y <= 0.42;
+  return false;
 }
 renderer.domElement.addEventListener('click', function(e){
   if (!shelfManager || shelfManager.getMode() === 'off') return;
@@ -12487,117 +12403,10 @@ async function playQueueAt(idx, opts) {
 
   try {
     markPlayPhase('source-url');
-    var isQQPlayback = songProviderKey(song) === 'qq';
-    var data = isQQPlayback
-      ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || ''))
-      : await apiJson('/api/song/url?id=' + song.id);
-    if (token !== trackSwitchToken) return;
-    if (!data.url) {
-      skipFailedQueueItem(idx, token, playbackRestrictionMessage(song, data));
-      return;
-    }
-    if (data.trial) {
-      var txt;
-      if (data.loggedIn && data.vipLevel === 'svip') txt = '此歌曲需要单曲、专辑购买或更高权限';
-      else if (data.loggedIn && data.vipLevel === 'vip') txt = '此歌曲需要 SVIP 或购买 · 当前仅播放试听片段';
-      else if (data.loggedIn) txt = '此歌曲需 VIP · 当前仅播放试听片段';
-      else txt = '当前来源仅提供试听片段';
-      document.getElementById('trial-text').textContent = txt;
-      document.getElementById('trial-banner').classList.add('show');
-    }
-    markPlayPhase('audio-element');
-    if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
-    else {
-      audioFadeSerial++;
-      clearAudioFadeTimers();
-      audio.pause();
-    }
-    bindPlaybackProgressEvents(audio);
-    applyVolumeToAudio();
-    var proxyAudioUrl = '/api/audio?url=' + encodeURIComponent(data.url);
-    audio.src = proxyAudioUrl;
-    updatePlaybackProgressUi();
-    audio.onended = function(){
-      if (token !== trackSwitchToken) return;
-      if (playMode === 'single') setTimeout(function(){ playQueueAt(currentIdx, { autoRepeat: true }); }, 0);
-      else setTimeout(nextTrack, 0);
-    };
-    scheduleAudioResumePosition(audio, opts.resumeAt, token);
-    audio.load();
-    markPlayPhase('visual-prep');
-    try {
-    // 重置 beatmap 状态
-    currentBeatMap = null;
-    beatMapNextIdx = 0;
-    resetAudioVisualState();
-    resetBeatCameraSync(0);
-    cancelBeatAnalysisTimer();
-    beatMapToken++;
-    var bmTok = beatMapToken;
-    if (podcastDjMode) {
-      // 播客走独立 DJ 离线锁拍系统, 不写入普通歌曲 beatMap.
-      djBeatMapToken++;
-      cancelDjBeatAnalysisTimer();
-      resetDjBeatMapState();
-      currentBeatMap = null;
-      beatMapNextIdx = 0;
-      var djTok = djBeatMapToken;
-      var djKey = djSongKey(song);
-      if (djBeatMapCache[djKey]) {
-        currentDjBeatMap = djBeatMapCache[djKey];
-        applyPodcastDjProfileFromMap(currentDjBeatMap);
-        syncPodcastDjMapCursor(audio ? audio.currentTime : 0, true);
-        hideBeatChip();
-        console.log('podcast DJ beatmap 缓存命中:', currentDjBeatMap.cameraBeats.length, '个主拍');
-      } else {
-        showBeatChip('DJ 离线锁拍准备中…');
-        var djDurationSec = Math.max(0, Number(song.duration) || 0);
-        if (djDurationSec > 10000) djDurationSec /= 1000;
-        schedulePodcastDjAnalysis(djKey, data.url, djTok, djDurationSec);
-      }
-      maybeAnnounceDjMode();
-    } else if (bmKey && beatMapCache[bmKey]) {
-      // 如果缓存有, 直接用
-      currentBeatMap = beatMapCache[bmKey];
-      applyCinemaProfileFromBeatMap(currentBeatMap);
-      syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0);
-      console.log('beatmap 缓存命中:', currentBeatMap.kicks.length, '个鼓点');
-      scheduleQueueBeatPrefetch(idx, 2600);
-    } else {
-      var diskBeatMap = bmKey ? await readBeatDiskCache(bmKey) : null;
-      if (diskBeatMap) {
-        currentBeatMap = diskBeatMap;
-        applyCinemaProfileFromBeatMap(currentBeatMap);
-        syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0);
-        console.log('beatmap D盘缓存命中:', currentBeatMap.kicks.length, '个鼓点');
-        scheduleQueueBeatPrefetch(idx, 2600);
-      } else {
-        // 后台延迟分析, 避免新歌刚开始播放时抢占解码和渲染资源
-        scheduleBeatAnalysis(bmKey || song.id, proxyAudioUrl, bmTok, song);
-      }
-    }
-    } catch (visualErr) {
-      console.warn('[PlaybackVisualPrep]', song && song.name, visualErr);
-      currentBeatMap = null;
-      beatMapNextIdx = 0;
-      safePlaybackStep('visual-prep-hide-chip', hideBeatChip);
-    }
-    markPlayPhase('audio-start');
-    var playbackStarted = await playAudio({ silent: isQQPlayback });
-    if (!playbackStarted) {
-      forcePlaybackControlsInteractive();
-      if (opts.manual) {
-        showToast('播放启动失败，请重新选择歌曲');
-      } else {
-        showSourceFallbackNotice('歌曲已载入', '点击播放器中间的播放按钮继续播放。');
-      }
-      return;
-    }
+    hideLoading();
     forcePlaybackControlsInteractive();
-    markPlayPhase('session-begin');
-    safeRenderQueuePanel('play-queue-at');
-    scheduleShelfRebuild('play-queue-at', true);
-    safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
+    showToast('在线音乐功能已移除，请在 EchoMusic 中播放或管理歌曲');
+    return;
   } catch (err) {
     console.error('Play failed:', { phase: playPhase, error: err }, err);
     hideLoading();
@@ -13111,14 +12920,14 @@ function applyPlaylistPanelPinState(openPanel) {
   }
   if (btn) {
     btn.classList.toggle('active', !!playlistPanelPinned);
-    btn.title = playlistPanelPinned ? '取消常开歌单' : '常开歌单';
+    btn.title = playlistPanelPinned ? '取消常开队列' : '常开队列';
   }
 }
 function setPlaylistPanelPinned(on, silent) {
   playlistPanelPinned = !!on;
   saveBooleanPreference(PLAYLIST_PANEL_PIN_STORE_KEY, playlistPanelPinned);
   applyPlaylistPanelPinState(playlistPanelPinned);
-  if (!silent) showToast(playlistPanelPinned ? '左侧歌单已常开' : '左侧歌单已恢复自动隐藏');
+  if (!silent) showToast(playlistPanelPinned ? '左侧队列已常开' : '左侧队列已恢复自动隐藏');
 }
 function togglePlaylistPanelPinned() {
   setPlaylistPanelPinned(!playlistPanelPinned);
@@ -13177,7 +12986,7 @@ function renderMiniQueuePanel(opts) {
   $count.textContent = total ? (total + ' 首' + (currentIdx >= 0 ? ' · 正在播放 ' + (currentIdx + 1) : '')) : '0 首';
   if (!miniQueueOpen && !opts.animate && !opts.scrollCurrent) return;
   if (!total) {
-    $list.innerHTML = '<div class="mini-queue-empty">队列为空，先打开歌单添加歌曲</div>';
+    $list.innerHTML = '<div class="mini-queue-empty">队列为空，请在 EchoMusic 中添加歌曲</div>';
     return;
   }
   $list.innerHTML = playQueue.map(function(song, i){
@@ -13207,7 +13016,7 @@ function renderQueuePanel(opts) {
   var $ql = document.getElementById('queue-list');
   var seq = ++queueRenderSeq;
   if (!playQueue.length) {
-    $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空，先从歌单添加歌曲</div>';
+    $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空，请在 EchoMusic 中添加歌曲</div>';
     renderMiniQueuePanel();
     return;
   }
@@ -13227,68 +13036,10 @@ function renderQueuePanel(opts) {
   renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
 }
 async function loadPodcastRadioIntoQueue(id, autoplay, title) {
-  if (!id) return;
-  showLoading();
-  try {
-    var r = await apiJson('/api/podcast/programs?id=' + encodeURIComponent(id) + '&limit=36');
-    if (r.error) { showToast('播客加载失败: ' + r.error); return; }
-    if (!r.programs || !r.programs.length) { showToast('播客暂无可播放节目'); return; }
-    playQueue = r.programs.map(cloneSong);
-    currentIdx = 0;
-    safeRenderQueuePanel('podcast-radio');
-    safeSwitchPlaylistTab('queue', 'podcast-radio');
-    safeShelfRebuild('podcast-radio', true);
-    forcePlaybackControlsInteractive();
-    if (autoplay) await playQueueAt(0);
-    showToast('载入: ' + (title || '播客'));
-  } catch (e) {
-    console.warn(e);
-    showToast('播客加载失败');
-  } finally {
-    hideLoading();
-  }
+  showToast('在线播客功能已移除，请在 EchoMusic 中管理播放队列');
 }
 async function loadPlaylistIntoQueueById(id, autoplay, title) {
-  if (!id) return;
-  showLoading();
-  var qqPlaylistId = String(id || '').indexOf('qq:') === 0 ? String(id).slice(3) : '';
-  var r = null;
-  try {
-    r = qqPlaylistId
-      ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(qqPlaylistId))
-      : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(id));
-  } catch (e) {
-    console.warn('[PlaylistLoadApi]', id, e);
-    showToast('歌单加载失败');
-    hideLoading();
-    return;
-  }
-  try {
-    if (r.error) { showToast('歌单加载失败: ' + r.error); return; }
-    if (!r.tracks || !r.tracks.length) { showToast('歌单为空'); return; }
-    playQueue = r.tracks.map(cloneSong);
-    currentIdx = 0;
-    safeRenderQueuePanel('playlist-load');
-    safeSwitchPlaylistTab('queue', 'playlist-load');
-    safeShelfRebuild('playlist-load', true);
-    forcePlaybackControlsInteractive();
-    if (autoplay) {
-      try {
-        await playQueueAt(0);
-      } catch (playErr) {
-        console.warn('[PlaylistAutoplay]', id, playErr);
-        showToast('歌单已载入，播放启动失败');
-      }
-    }
-    forcePlaybackControlsInteractive();
-    showToast('载入: ' + (title || ('歌单 ' + id)));
-  } catch (e) {
-    console.warn('[PlaylistLoadState]', id, e);
-    forcePlaybackControlsInteractive();
-    showToast('歌单已载入，界面刷新失败');
-  } finally {
-    hideLoading();
-  }
+  showToast('在线歌单功能已移除，请在 EchoMusic 中管理播放队列');
 }
 
 // 进度条
@@ -15986,7 +15737,7 @@ var visualGuideSteps = [
     target: 'stage',
     kicker: '01 / Welcome',
     title: 'Mineradio 是用来听歌的视觉播放器',
-    body: '它不是单纯歌单页：EchoMusic 当前播放的封面、歌词、粒子和镜头会跟着音乐一起动。'
+    body: '它不是单纯队列页：EchoMusic 当前播放的封面、歌词、粒子和镜头会跟着音乐一起动。'
   },
   {
     selector: '#bottom-bar',
@@ -16682,7 +16433,7 @@ document.addEventListener('keydown', function(e){
 // ============================================================
 //  UI 半隐藏 v8 — 面板触发/隐藏体验统一
 //   - 控制台 (右侧): x > w-48 进入, x < w-380 离开
-//   - 歌单 (左侧): x < 48 进入, x > 380 离开
+//   - 队列 (左侧): x < 48 进入, x > 380 离开
 //   - 进入立即显示, 离开延迟 500ms (统一)
 // ============================================================
 var PEEK_HIDE_DELAY = 170;
@@ -16820,7 +16571,7 @@ window.addEventListener('mousemove', function(e){
   updateShelfHoverCueFromPointer(e);
   updateShelfCardHoverSelection(e);
   // 视觉控制台只由右下角按钮展开，由标题栏关闭按钮关闭。
-  // 歌单/队列 DOM 面板不再由左侧边缘自动弹出，仅保留已打开后的悬停保持
+  // 播放队列 DOM 面板不再由左侧边缘自动弹出，仅保留已打开后的悬停保持
   var ppOn = pp.classList.contains('peek');
   var ppRect = pp.getBoundingClientRect();
   var inQueueTrigger = false;
