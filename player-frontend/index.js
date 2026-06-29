@@ -34,7 +34,6 @@ var MAX_VISUAL_PRESET_INDEX = 6;
 var PLAYLIST_PANEL_PIN_STORE_KEY = 'mineradio-playlist-panel-pinned-v1';
 var CONTROLS_AUTO_HIDE_STORE_KEY = 'mineradio-controls-auto-hide-v1';
 var FREE_CAMERA_STORE_KEY = 'mineradio-free-camera-v1';
-var VISUAL_GUIDE_SEEN_STORE_KEY = 'mineradio-visual-guide-seen-v2';
 var LOCAL_BEATMAP_STORE_KEY = 'mineradio-local-beatmaps-v1';
 var LOCAL_BEAT_PREF_STORE_KEY = 'mineradio-local-beatmap-prefs-v1';
 var LOCAL_BEAT_COMBOS = ['', 'downbeat', 'push', 'drop', 'rebound', 'accent'];
@@ -52,8 +51,6 @@ var localBeatMapCache = readLocalBeatMapCache();
 var localBeatMapPrefs = readLocalBeatPrefs();
 var currentLocalSong = null;
 var localBeatAnalysis = { song:null, audioUrl:'', mode:'mr', active:false, token:0 };
-var visualGuideActive = false, visualGuideStep = 0, visualGuideResizeBound = false;
-var visualGuideState = { bottomWasVisible: false, manual: false };
 var appPerfMarks = [];
 function markAppPerf(name) {
   try {
@@ -2553,7 +2550,7 @@ var particlePointerLocalHit = new THREE.Vector3();
 var particlePointerQuat = new THREE.Quaternion();
 var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
-var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#visual-guide,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
+var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
 
 function isPointerOverUi(e) {
   if (!e) return false;
@@ -9582,7 +9579,7 @@ function applyCoverDataUrl(dataUrl, opts) {
 var shelfPinnedOpen = false;
 var shelfManager = null;
 var shelfOpenAnimAt = -10;
-var shelfHoverCue = { target: 0, value: 0, x: 0, y: 0, lastAt: 0, enteredAt: 0, zoneActive: false, guide: false };
+var shelfHoverCue = { target: 0, value: 0, x: 0, y: 0, lastAt: 0, enteredAt: 0, zoneActive: false };
 var shelfVisibility = 0;  // 0..1, 侧栏自动隐藏的整体透明度系数
 function isShelfAppRevealed() {
   // 迁移后的桥接入口没有旧版启动揭示流程，缺失时按已揭示处理。
@@ -9656,23 +9653,15 @@ function canUseSideShelfWithoutPinnedOpen() {
   return !!shelfAlwaysVisible();
 }
 function shelfPreviewIsVisible() {
-  return shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.10 || shelfVisibility > 0.12;
+  return shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.10 || shelfVisibility > 0.12;
 }
 function shelfAutoHiddenInputReady() {
   if (shelfPinnedOpen || shelfAlwaysVisible()) return true;
   if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return true;
-  return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.value > 0.18 || shelfVisibility > 0.16);
+  return !!(shelfHoverCue.zoneActive || shelfHoverCue.value > 0.18 || shelfVisibility > 0.16);
 }
 function canShowShelfHoverCueAt(e) {
-  if (!e) return false;
-  if (!shelfHoverCue.guide) return false;
-  if (visualGuideActive) return false;
-  if (!shelfManager || !shelfManager.getMode || shelfManager.getMode() !== 'side') return false;
-  if (shelfPinnedOpen) return false;
-  if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-  if (isPointerOverUi(e)) return false;
-  if (isShelfClickZone(e)) return true;
-  return shelfPreviewIsVisible() && isShelfPreviewUseZone(e);
+  return false;
 }
 function shelfCueRect() {
   var w = shelfHotZoneWidth();
@@ -9684,22 +9673,9 @@ function shelfCueCenter() {
   var r = shelfCueRect();
   return { x: r.left + r.width * 0.58, y: r.top + r.height * 0.50 };
 }
-function setShelfGuideCueActive(on) {
-  shelfHoverCue.guide = !!on;
-  if (on) {
-    var c = shelfCueCenter();
-    shelfHoverCue.target = 1;
-    shelfHoverCue.value = Math.max(shelfHoverCue.value, 0.72);
-    shelfHoverCue.x = c.x;
-    shelfHoverCue.y = c.y;
-    shelfHoverCue.lastAt = performance.now();
-  } else {
-    shelfHoverCue.target = 0;
-  }
-}
 function updateShelfHoverCueFromPointer(e) {
   if (!e) {
-    if (!shelfHoverCue.guide) shelfHoverCue.target = 0;
+    shelfHoverCue.target = 0;
     shelfHoverCue.zoneActive = false;
     shelfHoverCue.enteredAt = 0;
     return;
@@ -9714,13 +9690,13 @@ function updateShelfHoverCueFromPointer(e) {
     shelfHoverCue.enteredAt = 0;
   }
   active = inZone;
-  if (!shelfHoverCue.guide) shelfHoverCue.target = active ? 1 : 0;
+  shelfHoverCue.target = active ? 1 : 0;
   shelfHoverCue.x = e.clientX;
   shelfHoverCue.y = e.clientY;
   shelfHoverCue.lastAt = performance.now();
 }
 function tickShelfHoverCue(dt) {
-  if (!shelfHoverCue.guide && shelfHoverCue.zoneActive) {
+  if (shelfHoverCue.zoneActive) {
     var heldPointer = { clientX: shelfHoverCue.x, clientY: shelfHoverCue.y };
     if (canShowShelfHoverCueAt(heldPointer)) {
       if (performance.now() - shelfHoverCue.enteredAt > 260) shelfHoverCue.target = 1;
@@ -9730,8 +9706,8 @@ function tickShelfHoverCue(dt) {
       shelfHoverCue.target = 0;
     }
   }
-  if (!shelfHoverCue.guide && !shelfHoverCue.zoneActive && performance.now() - shelfHoverCue.lastAt > 650) shelfHoverCue.target = 0;
-  var target = shelfHoverCue.guide ? 1 : shelfHoverCue.target;
+  if (!shelfHoverCue.zoneActive && performance.now() - shelfHoverCue.lastAt > 650) shelfHoverCue.target = 0;
+  var target = shelfHoverCue.target;
   var rate = target > shelfHoverCue.value ? 0.12 : 0.10;
   shelfHoverCue.value += (target - shelfHoverCue.value) * Math.min(1, rate * Math.max(1, dt * 60));
   if (shelfHoverCue.value < 0.006 && !target) shelfHoverCue.value = 0;
@@ -9742,7 +9718,7 @@ function setShelfPinnedOpen(open, immediate) {
   if (nextOpen && typeof suppressBottomControlsForShelf === 'function') suppressBottomControlsForShelf(980);
   if (nextOpen && !shelfPinnedOpen) {
     var nowT = uniforms && uniforms.uTime ? uniforms.uTime.value : performance.now() / 1000;
-    var previewVisible = shelfHoverCue.guide || shelfHoverCue.value > 0.28 || shelfVisibility > 0.20;
+    var previewVisible = shelfHoverCue.value > 0.28 || shelfVisibility > 0.20;
     shelfOpenAnimAt = previewVisible ? nowT - 0.62 : nowT;
     shelfHoverCue.target = 0;
     shelfHoverCue.zoneActive = false;
@@ -9777,7 +9753,6 @@ function suppressShelfPreviewForPlaybackSwitch() {
   shelfHoverCue.value = 0;
   shelfHoverCue.zoneActive = false;
   shelfHoverCue.enteredAt = 0;
-  shelfHoverCue.guide = false;
   shelfVisibility = 0;
   if (typeof setShelfHoverTabVisible === 'function') setShelfHoverTabVisible(false);
   if (shelfManager && shelfManager.clearSelected) shelfManager.clearSelected();
@@ -15166,14 +15141,12 @@ function shouldShowIdleGuide() {
   return true;
 }
 function shouldShowShelfHoverCue(value) {
-  if (!shelfHoverCue.guide && document.querySelector('.modal-mask.show')) return false;
-  if (!shelfHoverCue.guide) {
-    if (shelfPinnedOpen) return false;
-    if (!shelfManager || !shelfManager.canInteract || !shelfManager.canInteract()) return false;
-    if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-    if (!shelfManager.getMode || shelfManager.getMode() !== 'side') return false;
-  }
-  return shelfHoverCue.guide || shelfHoverCue.target > 0 || (value || shelfHoverCue.value) > 0.015;
+  if (document.querySelector('.modal-mask.show')) return false;
+  if (shelfPinnedOpen) return false;
+  if (!shelfManager || !shelfManager.canInteract || !shelfManager.canInteract()) return false;
+  if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
+  if (!shelfManager.getMode || shelfManager.getMode() !== 'side') return false;
+  return shelfHoverCue.target > 0 || (value || shelfHoverCue.value) > 0.015;
 }
 function shouldHandleIdleGuidePointer(e) {
   if (!idleGuideCanvas || !shouldShowIdleGuide()) return false;
@@ -15603,224 +15576,6 @@ function showToast(msg) {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2600);
 }
-
-var visualGuideSteps = [
-  {
-    target: 'stage',
-    kicker: '01 / Welcome',
-    title: 'Mineradio 是用来听歌的视觉播放器',
-    body: '它不是单纯队列页：EchoMusic 当前播放的封面、歌词、粒子和镜头会跟着音乐一起动。'
-  },
-  {
-    selector: '#bottom-bar',
-    kicker: '02 / Control',
-    title: '播放以后看底部控制台',
-    body: '播放、切歌、进度、队列和歌词都集中在底部，先把它当作一个正常播放器使用就可以。'
-  },
-  {
-    target: 'shelf',
-    kicker: '03 / Visual',
-    title: '进阶视觉都放在舞台周围',
-    body: '右侧 3D 歌单架和视觉控制台是进阶入口；先播放一首歌，再慢慢调视觉效果。'
-  },
-  {
-    selector: '#fx-panel',
-    kicker: '04 / Visual Lab',
-    title: '右侧是视觉控制台',
-    body: '靠近右下角或点击视觉按钮，可以调节粒子、歌词、镜头、3D 歌单架和更多视觉参数。'
-  }
-];
-function activeVisualGuideSteps() {
-  return visualGuideSteps;
-}
-function visualGuideWasSeen() {
-  try { return localStorage.getItem(VISUAL_GUIDE_SEEN_STORE_KEY) === '1'; } catch (e) { return true; }
-}
-function markVisualGuideSeen() {
-  try { localStorage.setItem(VISUAL_GUIDE_SEEN_STORE_KEY, '1'); } catch (e) {}
-}
-function maybeRunStartupVisualGuide(source) {
-  if (visualGuideWasSeen() || visualGuideActive || immersiveMode || playing) return false;
-  setTimeout(function(){
-    if (!visualGuideWasSeen() || source === 'manual') startVisualGuide({ source: source || 'startup' });
-  }, 1400);
-  return true;
-}
-function startVisualGuide(opts) {
-  opts = opts || {};
-  if (immersiveMode) setImmersiveMode(false);
-  closeMiniQueue();
-  visualGuideActive = true;
-  document.body.classList.add('visual-guide-active');
-  visualGuideStep = 0;
-  visualGuideState = {
-    bottomWasVisible: !!(document.getElementById('bottom-bar') && document.getElementById('bottom-bar').classList.contains('visible')),
-    fxWasPeek: !!(document.getElementById('fx-panel') && document.getElementById('fx-panel').classList.contains('peek')),
-    plWasPeek: !!(document.getElementById('playlist-panel') && document.getElementById('playlist-panel').classList.contains('peek')),
-    manual: !!opts.manual
-  };
-  var guide = document.getElementById('visual-guide');
-  if (guide) {
-    guide.classList.add('show');
-    guide.setAttribute('aria-hidden', 'false');
-  }
-  if (!visualGuideResizeBound) {
-    visualGuideResizeBound = true;
-    window.addEventListener('resize', positionVisualGuideStep);
-    window.addEventListener('scroll', positionVisualGuideStep, true);
-  }
-  showVisualGuideStep(0);
-}
-function prepareVisualGuideStep(step) {
-  var bottom = document.getElementById('bottom-bar');
-  var fxPanel = document.getElementById('fx-panel');
-  var playlistPanel = document.getElementById('playlist-panel');
-  if (typeof setShelfGuideCueActive === 'function') setShelfGuideCueActive(step && step.target === 'shelf');
-  if (step && step.selector === '#playlist-panel') setPeek(playlistPanel, true, 'pl');
-  else if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
-  if (step && step.selector === '#fx-panel') setPeek(fxPanel, true, 'fx');
-  if (step && (step.selector === '#bottom-bar' || step.selector === '#mini-queue-btn' || step.selector === '#immersive-btn')) {
-    if (bottom) bottom.classList.add('visible');
-    revealBottomControls(1500);
-  }
-}
-function scheduleVisualGuidePositioning() {
-  requestAnimationFrame(positionVisualGuideStep);
-  setTimeout(positionVisualGuideStep, 180);
-  setTimeout(positionVisualGuideStep, 620);
-}
-function showVisualGuideStep(index) {
-  var steps = activeVisualGuideSteps();
-  visualGuideStep = Math.max(0, Math.min(steps.length - 1, index));
-  var step = steps[visualGuideStep];
-  prepareVisualGuideStep(step);
-  var title = document.getElementById('visual-guide-title');
-  var body = document.getElementById('visual-guide-body');
-  var kicker = document.getElementById('visual-guide-kicker');
-  var hint = document.getElementById('visual-guide-hint');
-  var progress = document.getElementById('visual-guide-progress');
-  var next = document.getElementById('visual-guide-next');
-  if (title) title.textContent = step.title;
-  if (body) body.textContent = step.body;
-  if (kicker) kicker.textContent = step.kicker;
-  if (hint) hint.textContent = visualGuideStep === steps.length - 1 ? '点击空白处完成引导' : '点击空白处也可以继续';
-  if (progress) progress.textContent = (visualGuideStep + 1) + ' / ' + steps.length;
-  if (next) next.textContent = visualGuideStep === steps.length - 1 ? '完成' : '下一步';
-  scheduleVisualGuidePositioning();
-}
-function guideTargetRect(step) {
-  if (step && step.target === 'stage') {
-    var stageW = Math.min(620, Math.max(260, innerWidth - 72));
-    var stageH = Math.min(310, Math.max(178, innerHeight * 0.34));
-    var stageLeft = innerWidth * 0.5 - stageW * 0.5;
-    var stageTop = Math.max(116, innerHeight * 0.32 - stageH * 0.5);
-    return { left: stageLeft, top: stageTop, width: stageW, height: stageH, right: stageLeft + stageW, bottom: stageTop + stageH };
-  }
-  if (step && step.target === 'shelf' && typeof shelfCueRect === 'function') {
-    var shelfRect = shelfCueRect();
-    var shelfLeft = shelfRect.left;
-    var shelfTop = shelfRect.top - 26;
-    var shelfRight = Math.min(innerWidth - 12, shelfRect.right + 18);
-    var shelfBottom = shelfRect.bottom + 26;
-    return { left: shelfLeft, top: shelfTop, width: shelfRight - shelfLeft, height: shelfBottom - shelfTop, right: shelfRight, bottom: shelfBottom };
-  }
-  if (step && step.selector === '#bottom-bar') {
-    var bar = document.getElementById('bottom-bar');
-    var progress = document.getElementById('progress-bar');
-    var controls = document.getElementById('controls');
-    if (bar) {
-      var br = bar.getBoundingClientRect();
-      var left = br.left, top = br.top, right = br.right, bottom = br.bottom;
-      [progress, controls].forEach(function(el){
-        if (!el) return;
-        var r = el.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0) return;
-        left = Math.min(left, r.left);
-        top = Math.min(top, r.top);
-        right = Math.max(right, r.right);
-        bottom = Math.max(bottom, r.bottom);
-      });
-      return { left: left, top: top, width: right - left, height: bottom - top, right: right, bottom: bottom };
-    }
-  }
-  var target = step && step.selector ? document.querySelector(step.selector) : null;
-  if (target) {
-    var style = window.getComputedStyle(target);
-    var rect = target.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') return rect;
-  }
-  return { left: innerWidth * 0.5 - 120, top: innerHeight * 0.5 - 40, width: 240, height: 80, right: innerWidth * 0.5 + 120, bottom: innerHeight * 0.5 + 40 };
-}
-function positionVisualGuideStep() {
-  if (!visualGuideActive) return;
-  var guide = document.getElementById('visual-guide');
-  var ring = document.getElementById('visual-guide-ring');
-  var card = document.getElementById('visual-guide-card');
-  if (!guide || !ring || !card) return;
-  var step = activeVisualGuideSteps()[visualGuideStep];
-  var rect = guideTargetRect(step);
-  ring.classList.toggle('shelf-target', !!(step && step.target === 'shelf'));
-  var pad = step && step.target === 'shelf' ? 14 : (step && step.selector === '#bottom-bar' ? 10 : 8);
-  var left = Math.max(12, rect.left - pad);
-  var top = Math.max(12, rect.top - pad);
-  var width = Math.min(innerWidth - left - 12, rect.width + pad * 2);
-  var height = Math.min(innerHeight - top - 12, rect.height + pad * 2);
-  ring.style.left = left + 'px';
-  ring.style.top = top + 'px';
-  ring.style.width = Math.max(44, width) + 'px';
-  ring.style.height = Math.max(38, height) + 'px';
-  ring.style.borderRadius = step && step.target === 'shelf' ? '28px' : ((step && step.selector === '#bottom-bar') ? '20px' : '16px');
-  var scrim = guide.querySelector('.visual-guide-scrim');
-  if (scrim) {
-    scrim.style.setProperty('--gx', ((rect.left + rect.width / 2) / Math.max(1, innerWidth) * 100).toFixed(2) + '%');
-    scrim.style.setProperty('--gy', ((rect.top + rect.height / 2) / Math.max(1, innerHeight) * 100).toFixed(2) + '%');
-  }
-  var cardW = Math.min(326, innerWidth - 32);
-  var cardH = card.offsetHeight || 170;
-  var cardLeft = rect.left + rect.width / 2 - cardW / 2;
-  cardLeft = Math.max(16, Math.min(innerWidth - cardW - 16, cardLeft));
-  var below = rect.bottom + 18;
-  var above = rect.top - cardH - 18;
-  var cardTop = below + cardH < innerHeight - 16 ? below : Math.max(16, above);
-  card.style.left = cardLeft + 'px';
-  card.style.top = cardTop + 'px';
-}
-function nextVisualGuideStep() {
-  var steps = activeVisualGuideSteps();
-  if (visualGuideStep >= steps.length - 1) {
-    closeVisualGuide(true);
-    return;
-  }
-  showVisualGuideStep(visualGuideStep + 1);
-}
-function closeVisualGuide(markSeen) {
-  var guide = document.getElementById('visual-guide');
-  visualGuideActive = false;
-  if (markSeen) markVisualGuideSeen();
-  if (guide) {
-    guide.classList.remove('show');
-    guide.setAttribute('aria-hidden', 'true');
-  }
-  document.body.classList.remove('visual-guide-active');
-  var bottom = document.getElementById('bottom-bar');
-  var fxPanel = document.getElementById('fx-panel');
-  var playlistPanel = document.getElementById('playlist-panel');
-  if (typeof setShelfGuideCueActive === 'function') setShelfGuideCueActive(false);
-  if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
-  if (bottom && !visualGuideState.bottomWasVisible && !playing) bottom.classList.remove('visible', 'soft-hidden');
-}
-function handleVisualGuideSurfaceClick(e) {
-  if (!visualGuideActive) return;
-  if (e && e.target && e.target.closest && e.target.closest('button')) return;
-  if (e && e.preventDefault) e.preventDefault();
-  nextVisualGuideStep();
-}
-(function bindVisualGuideSurfaceClick(){
-  var guide = document.getElementById('visual-guide');
-  if (guide) guide.addEventListener('click', handleVisualGuideSurfaceClick);
-})();
-
-
 
 // ===== js/10-device-bootstrap.js =====
 
@@ -16669,7 +16424,6 @@ if (fx.floatLayer) createFloatLayer();
 if (fx.particleLyrics) createLyricsParticles();
 if (fx.backCover) createBackCoverLayer();
 initIdleGuideCanvas();
-maybeRunStartupVisualGuide('status');
 safeRenderQueuePanel('startup');
 
 
