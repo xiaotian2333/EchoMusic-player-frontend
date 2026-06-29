@@ -4,7 +4,7 @@
 // ============================================================
 //  Global State
 // ============================================================
-var audio = null, audioCtx = null, source = null, gainNode = null, audioReady = false;
+var audio = null;
 var uiSfxCtx = null, lastShelfSelectSfxAt = 0;
 var FFT_SIZE = 2048;
 var frequencyData = new Uint8Array(FFT_SIZE / 2);
@@ -25,10 +25,6 @@ var lastStrongDrop = 0;           // 用于 burst 预设的强 drop 时刻
 var lyricsLines = [], lyricsVisible = false, lyricsHasNativeKaraoke = false, lyricsTimingSource = 'none';
 var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleBusy = false;
 var volumeTween = null, trackSwitchToken = 0;
-var audioFadeTimer = null, audioElementFadeFrame = 0, audioFadeSerial = 0;
-var AUDIO_FADE_IN_MS = 460;
-var AUDIO_FADE_OUT_MS = 420;
-var AUDIO_SILENCE_GAIN = 0.0001;
 var playlistCoverCache = {};
 var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
@@ -6800,15 +6796,6 @@ function tweenLoading(to, durationMs, onComplete) {
   }
   loadingTween = { raf: requestAnimationFrame(step) };
 }
-function showLoading() {
-  loadingShownAt = performance.now();
-  if (loadingHideTimer) {
-    clearTimeout(loadingHideTimer);
-    loadingHideTimer = null;
-  }
-  var current = uniforms.uLoading.value || 0;
-  tweenLoading(Math.max(current, 0.56), current > 0.04 ? 86 : 118);
-}
 function hideLoading() {
   if (loadingHideTimer) clearTimeout(loadingHideTimer);
   if (isHiddenForBackgroundOptimization() || isDeepBackgroundMode()) {
@@ -6997,10 +6984,6 @@ function beatMapSongKey(song) {
   return '';
 }
 
-function showBeatChip(text) {
-  document.getElementById('beat-text').textContent = text || '等待宿主频谱…';
-  document.getElementById('beat-chip').classList.add('show');
-}
 function hideBeatChip() {
   document.getElementById('beat-chip').classList.remove('show');
 }
@@ -9394,25 +9377,6 @@ function songProviderKey(song) {
 
 // ===== js/07-audio-queue-lyrics.js =====
 
-// ============================================================
-//  音频上下文 & 频谱分析
-// ============================================================
-function initAudio() {
-  if (audioReady) return;
-  // 旧自带音频播放链路已移除，不再把真实媒体元素接入 WebAudio。
-  audioCtx = null;
-  source = null;
-  gainNode = null;
-  frequencyData.fill(0);
-  timeDomainData.fill(128);
-  beatFrequencyData.fill(0);
-  beatTimeDomainData.fill(128);
-  resetRealtimeBeatEngine();
-}
-function resumeAudioAnalysis() {
-  return Promise.resolve();
-}
-
 function ensureUiSfxContext() {
   var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
@@ -9491,135 +9455,10 @@ function playShelfSelectTick(direction, variant) {
   }, 160);
 }
 
-function clearAudioFadeTimers() {
-  if (audioFadeTimer) {
-    clearTimeout(audioFadeTimer);
-    audioFadeTimer = null;
-  }
-  if (audioElementFadeFrame) {
-    cancelAnimationFrame(audioElementFadeFrame);
-    audioElementFadeFrame = 0;
-  }
-}
-function currentAudioOutputGain() {
-  if (gainNode && gainNode.gain && isFinite(gainNode.gain.value)) return clampRange(Number(gainNode.gain.value), 0, 1);
-  if (audio && isFinite(audio.volume)) return clampRange(Number(audio.volume), 0, 1);
-  return clampRange(targetVolume, 0, 1);
-}
-function audioSilentFloor() {
-  return targetVolume > 0.001 ? AUDIO_SILENCE_GAIN : 0;
-}
-function normalizeAudioFadeTarget(value) {
-  value = clampRange(Number(value) || 0, 0, 1);
-  return value <= 0.001 ? audioSilentFloor() : value;
-}
-function holdAudioOutputGain(now) {
-  var current = currentAudioOutputGain();
-  if (!gainNode || !audioCtx || !gainNode.gain) return current;
-  var param = gainNode.gain;
-  try {
-    if (typeof param.cancelAndHoldAtTime === 'function') {
-      param.cancelAndHoldAtTime(now);
-      return currentAudioOutputGain();
-    }
-    param.cancelScheduledValues(now);
-    param.setValueAtTime(current, now);
-  } catch (e) {
-    try {
-      param.cancelScheduledValues(now);
-      param.setValueAtTime(current, now);
-    } catch (_) {}
-  }
-  return current;
-}
-function setAudioOutputGainImmediate(value) {
-  value = normalizeAudioFadeTarget(value);
-  clearAudioFadeTimers();
-  if (gainNode && audioCtx) {
-    var now = audioCtx.currentTime || 0;
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setValueAtTime(value, now);
-  } else if (audio) {
-    audio.volume = value;
-  }
-}
-function rampAudioOutputGain(value, durationMs) {
-  value = normalizeAudioFadeTarget(value);
-  durationMs = Math.max(0, Number(durationMs) || 0);
-  clearAudioFadeTimers();
-  var serial = audioFadeSerial;
-  if (gainNode && audioCtx) {
-    var now = audioCtx.currentTime || 0;
-    holdAudioOutputGain(now);
-    if (durationMs <= 0) {
-      gainNode.gain.setValueAtTime(value, now);
-      return;
-    }
-    gainNode.gain.linearRampToValueAtTime(value, now + durationMs / 1000);
-    return;
-  }
-  if (!audio) return;
-  var from = currentAudioOutputGain();
-  var started = performance.now();
-  function tickAudioFade(nowMs) {
-    if (serial !== audioFadeSerial || !audio) return;
-    var t = durationMs ? clampRange((nowMs - started) / durationMs, 0, 1) : 1;
-    var eased = 1 - Math.pow(1 - t, 3);
-    audio.volume = from + (value - from) * eased;
-    if (t < 1) audioElementFadeFrame = requestAnimationFrame(tickAudioFade);
-    else audioElementFadeFrame = 0;
-  }
-  audioElementFadeFrame = requestAnimationFrame(tickAudioFade);
-}
-function preparePlaybackFadeIn() {
-  audioFadeSerial++;
-  setAudioOutputGainImmediate(0);
-}
-function startPlaybackFadeIn() {
-  audioFadeSerial++;
-  if (targetVolume <= 0.001) {
-    setAudioOutputGainImmediate(0);
-    return;
-  }
-  rampAudioOutputGain(targetVolume, AUDIO_FADE_IN_MS);
-}
-function restorePlaybackGain() {
-  audioFadeSerial++;
-  setAudioOutputGainImmediate(targetVolume);
-}
-function fadeOutAndPauseAudio() {
-  if (!audio || audio.paused) return Promise.resolve(false);
-  var serial = ++audioFadeSerial;
-  rampAudioOutputGain(0, AUDIO_FADE_OUT_MS);
-  return new Promise(function(resolve) {
-    audioFadeTimer = setTimeout(function(){
-      audioFadeTimer = null;
-      if (serial !== audioFadeSerial || !audio) {
-        resolve(false);
-        return;
-      }
-      // 旧独立播放器已移除，这里只同步本地 UI 状态，不直接暂停真实媒体元素。
-      try {
-        audio.paused = true;
-        audio.ended = false;
-      } catch (pauseErr) {
-        console.warn('[TogglePlayPause]', pauseErr);
-      }
-      setAudioOutputGainImmediate(0);
-      resolve(true);
-    }, AUDIO_FADE_OUT_MS + 80);
-  });
-}
-
 function applyVolumeToAudio() {
   if (audio) {
     audio.muted = false;
-    audio.volume = gainNode ? 1 : targetVolume;
-  }
-  if (gainNode && audioCtx) {
-    var now = audioCtx.currentTime || 0;
-    gainNode.gain.cancelScheduledValues(now);
-    gainNode.gain.setTargetAtTime(targetVolume, now, 0.025);
+    audio.volume = targetVolume;
   }
 }
 
@@ -9654,13 +9493,6 @@ function adjustVolumeByKeyboard(delta) {
   var step = Number(delta) || 0;
   if (!step) return;
   setVolume(clampRange(targetVolume + step, 0, 1), false);
-}
-
-function toggleVolumePanel(e) {
-  if (e) e.stopPropagation();
-  var wrap = document.getElementById('volume-control');
-  if (volumeCloseTimer) { clearTimeout(volumeCloseTimer); volumeCloseTimer = null; }
-  if (wrap) wrap.classList.toggle('open');
 }
 
 function keepVolumePanelOpen() {
@@ -9788,68 +9620,6 @@ function requestHostPlayNextIndex(i) {
   sendEchoHostCommand('queue-play-next-index', { index: i }, '请在 EchoMusic 中管理下一首');
 }
 var firstPlayDone = false;
-
-function pauseCurrentAudioForTrackSwitch() {
-  playToggleBusy = false;
-  if (!audio) return;
-  try {
-    audioFadeSerial++;
-    clearAudioFadeTimers();
-    audio.onended = null;
-  } catch (e) {}
-  playing = false;
-  setPlayIcon(false);
-  syncPlaybackStateFromAudioEvent('track-switch');
-}
-
-function syncPlaybackStateFromAudioEvent(reason) {
-  var isPlaying = !!(audio && audio.src && !audio.paused && !audio.ended);
-  playing = isPlaying;
-  setPlayIcon(isPlaying);
-  if (!isPlaying) hideLoading();
-  if (reason === 'play' || reason === 'playing') switchPlaybackVisualToEmily();
-  forcePlaybackControlsInteractive();
-}
-
-function isPlaybackRecursionError(err) {
-  var msg = String((err && err.message) || err || '');
-  return err instanceof RangeError || /maximum call stack size exceeded/i.test(msg);
-}
-
-function safePlaybackStep(label, fn) {
-  try {
-    return fn();
-  } catch (err) {
-    console.warn('[PlaybackSetupStep]', label, err);
-    return null;
-  }
-}
-
-function playbackFailureToastText(err) {
-  if (isPlaybackRecursionError(err)) return '播放准备异常，已保持播放器可操作';
-  return '播放失败: ' + (err && err.message ? err.message : err);
-}
-function scheduleAudioResumePosition(media, seconds, token) {
-  seconds = Math.max(0, Number(seconds) || 0);
-  if (!media || seconds < 0.35) return;
-  var applied = false;
-  function applyResume() {
-    if (applied || token !== trackSwitchToken || !media) return;
-    var duration = Number(media.duration) || 0;
-    var target = duration > 0 ? Math.min(seconds, Math.max(0, duration - 0.45)) : seconds;
-    try {
-      media.currentTime = target;
-      applied = true;
-      if (typeof syncBeatMapPlaybackCursor === 'function') syncBeatMapPlaybackCursor(target, true);
-      if (typeof syncPodcastDjMapCursor === 'function') syncPodcastDjMapCursor(target, true);
-      updatePlaybackProgressUi();
-    } catch (e) {}
-  }
-  media.addEventListener('loadedmetadata', applyResume, { once: true });
-  media.addEventListener('canplay', applyResume, { once: true });
-  setTimeout(applyResume, 520);
-  applyResume();
-}
 
 async function playQueueAt(idx, opts) {
   opts = opts || {};
@@ -10267,9 +10037,6 @@ function animateVisiblePanelList(listEl, selector, scroller, activeSelector, opt
     if (active && scroller && opts.scrollActive !== false) smoothScrollToItem(scroller, active, { duration: 0.32 });
   });
 }
-function miniQueueSkeleton() {
-  return '<div class="mini-queue-skeleton"></div><div class="mini-queue-skeleton"></div><div class="mini-queue-skeleton"></div>';
-}
 function togglePlaylistPanel(force) {
   var el = document.getElementById('playlist-panel');
   if (force === false) el.classList.remove('show');
@@ -10346,12 +10113,6 @@ function toggleMiniQueue(e) {
 }
 function closeMiniQueue() {
   setMiniQueueOpen(false);
-}
-function openPlaylistPanelTab(tab, preserve) {
-  var panel = document.getElementById('playlist-panel');
-  if (panel && panel.dataset && preserve !== false) panel.dataset.preserveTabOnOpen = '1';
-  switchPlaylistTab('queue');
-  setPeek(panel, true, 'pl');
 }
 function renderMiniQueuePanel(opts) {
   opts = opts || {};
@@ -10450,16 +10211,6 @@ function updatePlaybackProgressUi() {
   setProgressVisual(durationSec > 0 ? (currentSec / durationSec * 100) : 0);
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
-}
-function bindPlaybackProgressEvents(audioEl) {
-  if (!audioEl || audioEl._mineradioProgressBound) return;
-  audioEl._mineradioProgressBound = true;
-  ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'play', 'pause', 'emptied'].forEach(function(name){
-    audioEl.addEventListener(name, updatePlaybackProgressUi);
-  });
-  ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function(name){
-    audioEl.addEventListener(name, function(){ syncPlaybackStateFromAudioEvent(name); });
-  });
 }
 function emitProgressDragParticles(x, y) {
   var now = performance.now();
@@ -14553,7 +14304,6 @@ function startMainLoopSafely() {
         pause: function() { requestBridgePlayback(false); },
       };
     }
-    audioReady = true;
   }
 
   function forcePlayerSurface() {
