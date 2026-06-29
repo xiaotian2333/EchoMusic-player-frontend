@@ -1,10 +1,12 @@
 {
   "id": "player-frontend",
-  "name": "插件播放器",
-  "version": "1.0.0",
-  "description": "接管歌词页入口的插件播放器页面",
-  "author": "EchoMusic",
-  "icon": "icon.png",
+  "name": "3D歌词",
+  "version": "1.0.1",
+  "description": "仿Mineradio歌词页",
+  "author": "xiaotian2333",
+  "path": "",
+  "repo": "https://github.com/xiaotian2333/EchoMusic-player-frontend",
+  "homepage": "hhttps://github.com/xiaotian2333/EchoMusic-player-frontend",
   "main": "index.js",
   "style": "style.css",
   "tags": [
