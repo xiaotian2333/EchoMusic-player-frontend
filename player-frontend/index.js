@@ -7812,7 +7812,7 @@ function makeShelfManager() {
 
   function playPlaylistCard(card) {
     if (card) pulseCard(card, 1.05);
-    showToast('在线歌单功能已移除，请在 EchoMusic 中管理播放队列');
+    showToast('在线歌单功能已移除');
     return true;
   }
 
@@ -8657,7 +8657,7 @@ function makeContentListManager() {
         // 在线歌单入口已移除，仅保留宿主队列展示。
         disposeRows();
         contentKind = 'playlist';
-        allTracks = [{ name: '在线歌单已移除', artist: '请在 EchoMusic 中管理播放队列' }];
+        allTracks = [{ name: '在线歌单已移除', artist: '播放队列由宿主同步' }];
         centerTarget = 0; centerSmooth = 0;
         panelDirty = true;
         rowsDirty = true;
@@ -9590,34 +9590,30 @@ function hostCommandSong(song) {
   cloned.duration = Number(cloned.duration || 0);
   return cloned;
 }
-function sendEchoHostCommand(name, payload, fallbackMessage) {
-  if (window.__echoBridgeCommand) {
-    window.__echoBridgeCommand(name, payload || {});
-    return true;
-  }
-  if (typeof showToast === 'function') showToast(fallbackMessage || '请在 EchoMusic 中操作播放队列');
-  return false;
+function sendEchoHostCommand(name, payload) {
+  window.__echoBridgeCommand(name, payload || {});
 }
 function requestHostPlaySong(song) {
   var payloadSong = hostCommandSong(song);
   if (!payloadSong) return false;
-  return sendEchoHostCommand('play-song', { song: payloadSong }, '请在 EchoMusic 中播放歌曲');
+  sendEchoHostCommand('play-song', { song: payloadSong });
+  return true;
 }
 function requestHostPlayNextSong(song) {
   var payloadSong = hostCommandSong(song);
   if (!payloadSong) return false;
-  return sendEchoHostCommand('queue-play-next-song', { song: payloadSong }, '请在 EchoMusic 中管理下一首');
+  sendEchoHostCommand('queue-play-next-song', { song: payloadSong });
+  return true;
 }
 function queueDetailSongNext(song) {
   if (!song || song.type === 'podcast-radio') return;
-  if (requestHostPlayNextSong(song) && typeof showToast === 'function') {
-    showToast('已发送下一首: ' + (song.name || ''));
-  }
+  requestHostPlayNextSong(song);
+  if (typeof showToast === 'function') showToast('已发送下一首: ' + (song.name || ''));
 }
 function requestHostPlayNextIndex(i) {
   i = Number(i);
   if (!isFinite(i) || i < 0 || i >= playQueue.length) return;
-  sendEchoHostCommand('queue-play-next-index', { index: i }, '请在 EchoMusic 中管理下一首');
+  sendEchoHostCommand('queue-play-next-index', { index: i });
 }
 var firstPlayDone = false;
 
@@ -9627,39 +9623,16 @@ async function playQueueAt(idx, opts) {
   forcePlaybackControlsInteractive();
   idx = Number(idx);
   if (!isFinite(idx) || idx < 0) return false;
-  sendEchoHostCommand('play-index', { index: idx }, '请在 EchoMusic 中播放或管理歌曲');
+  sendEchoHostCommand('play-index', { index: idx });
   return false;
-}
-async function attemptAudioPlay(opts) {
-  opts = opts || {};
-  hideLoading();
-  forcePlaybackControlsInteractive();
-  playing = !!(audio && audio.__echoBridgeAudio && !audio.paused);
-  setPlayIcon(playing);
-  if (!opts.silent) showToast('请在 EchoMusic 中播放歌曲');
-  return false;
-}
-async function playAudio(opts) {
-  opts = opts || {};
-  return attemptAudioPlay({ manual: false, silent: !!opts.silent });
 }
 async function togglePlay() {
   if (playToggleBusy) return;
   playToggleBusy = true;
-  try {
-    forcePlaybackControlsInteractive();
-    hideLoading();
-    showToast('请在 EchoMusic 中播放或暂停歌曲');
-  } catch (err) {
-    console.warn('[TogglePlay]', err);
-    playing = !!(audio && audio.__echoBridgeAudio && !audio.paused);
-    setPlayIcon(playing);
-    hideLoading();
-    forcePlaybackControlsInteractive();
-    showToast('播放控制失败');
-  } finally {
-    playToggleBusy = false;
-  }
+  forcePlaybackControlsInteractive();
+  hideLoading();
+  sendEchoHostCommand('toggle-play');
+  playToggleBusy = false;
 }
 function setPlayIcon(p) {
   document.getElementById('play-icon').innerHTML = p
@@ -9669,23 +9642,23 @@ function setPlayIcon(p) {
 function nextTrack() {
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  sendEchoHostCommand('next', {}, '请在 EchoMusic 中切换下一首');
+  sendEchoHostCommand('next');
 }
 function prevTrack() {
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  sendEchoHostCommand('prev', {}, '请在 EchoMusic 中切换上一首');
+  sendEchoHostCommand('prev');
 }
 function shuffleQueue() {
-  sendEchoHostCommand('set-mode', { mode: 'random' }, '请在 EchoMusic 中切换随机播放');
+  sendEchoHostCommand('set-mode', { mode: 'random' });
 }
 function clearQueue() {
-  sendEchoHostCommand('queue-clear', {}, '请在 EchoMusic 中管理当前队列');
+  sendEchoHostCommand('queue-clear');
 }
 function removeFromQueue(idx) {
   idx = Number(idx);
   if (!isFinite(idx) || idx < 0) return;
-  sendEchoHostCommand('queue-remove-index', { index: idx }, '请在 EchoMusic 中管理当前队列');
+  sendEchoHostCommand('queue-remove-index', { index: idx });
 }
 function playModeLabel(mode) {
   return { loop: '顺序循环', shuffle: '随机播放', single: '单曲循环' }[mode] || '顺序循环';
@@ -9735,7 +9708,7 @@ function updatePlayModeButton(animate) {
 }
 
 function cyclePlayMode() {
-  sendEchoHostCommand('cycle-mode', {}, '请在 EchoMusic 中切换播放模式');
+  sendEchoHostCommand('cycle-mode');
 }
 updatePlayModeButton(false);
 
@@ -10123,7 +10096,7 @@ function renderMiniQueuePanel(opts) {
   $count.textContent = total ? (total + ' 首' + (currentIdx >= 0 ? ' · 正在播放 ' + (currentIdx + 1) : '')) : '0 首';
   if (!miniQueueOpen && !opts.animate && !opts.scrollCurrent) return;
   if (!total) {
-    $list.innerHTML = '<div class="mini-queue-empty">队列为空，请在 EchoMusic 中添加歌曲</div>';
+    $list.innerHTML = '<div class="mini-queue-empty">队列为空</div>';
     return;
   }
   $list.innerHTML = playQueue.map(function(song, i){
@@ -10153,7 +10126,7 @@ function renderQueuePanel(opts) {
   var $ql = document.getElementById('queue-list');
   var seq = ++queueRenderSeq;
   if (!playQueue.length) {
-    $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空，请在 EchoMusic 中添加歌曲</div>';
+    $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空</div>';
     renderMiniQueuePanel();
     return;
   }
@@ -10173,10 +10146,10 @@ function renderQueuePanel(opts) {
   renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
 }
 async function loadPodcastRadioIntoQueue(id, autoplay, title) {
-  showToast('在线播客功能已移除，请在 EchoMusic 中管理播放队列');
+  showToast('在线播客功能已移除');
 }
 async function loadPlaylistIntoQueueById(id, autoplay, title) {
-  showToast('在线歌单功能已移除，请在 EchoMusic 中管理播放队列');
+  showToast('在线歌单功能已移除');
 }
 
 // 进度条
