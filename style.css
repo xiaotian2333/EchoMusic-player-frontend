@@ -1,7 +1,6 @@
 body.epf-overlay-open {
   overflow: hidden;
 }
-
 .epf-bridge-page {
   position: fixed;
   inset: 0;
@@ -14,7 +13,6 @@ body.epf-overlay-open {
   background: #010304;
   -webkit-app-region: no-drag;
 }
-
 .epf-bridge-frame {
   display: block;
   width: 100%;
@@ -22,7 +20,6 @@ body.epf-overlay-open {
   border: 0;
   background: #010304;
 }
-
 .epf-bridge-drag-strip {
   position: fixed;
   top: 0;
@@ -33,7 +30,6 @@ body.epf-overlay-open {
   background: transparent;
   -webkit-app-region: drag;
 }
-
 .epf-bridge-loading {
   display: flex;
   flex-direction: column;
@@ -45,13 +41,11 @@ body.epf-overlay-open {
   color: rgba(255, 255, 255, 0.66);
   font-size: 13px;
 }
-
 .epf-bridge-loading-text {
   max-width: min(520px, calc(100vw - 48px));
   text-align: center;
   line-height: 1.6;
 }
-
 .epf-bridge-close {
   display: inline-flex;
   align-items: center;
@@ -64,12 +58,8 @@ body.epf-overlay-open {
   color: rgba(255, 255, 255, 0.82);
   font: inherit;
   cursor: pointer;
-  transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
-
 .epf-bridge-close:hover {
   border-color: rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.14);
