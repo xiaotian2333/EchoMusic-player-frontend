@@ -11798,25 +11798,16 @@ function songProviderKey(song) {
 // ============================================================
 function initAudio() {
   if (audioReady) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  source = audioCtx.createMediaElementSource(audio);
-  analyser = audioCtx.createAnalyser();
-  beatAnalyser = audioCtx.createAnalyser();
-  gainNode = audioCtx.createGain();
-  analyser.fftSize = FFT_SIZE;
-  analyser.smoothingTimeConstant = 0.58;
-  beatAnalyser.fftSize = BEAT_FFT_SIZE;
-  beatAnalyser.smoothingTimeConstant = 0.10;
-  source.connect(analyser);
-  source.connect(beatAnalyser);
-  analyser.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
-  applyVolumeToAudio();
+  // 旧自带音频播放链路已移除，不再把真实媒体元素接入 WebAudio。
+  audioCtx = null;
+  source = null;
+  analyser = null;
+  beatAnalyser = null;
+  gainNode = null;
   frequencyData.fill(0);
   beatFrequencyData.fill(0);
   beatTimeDomainData.fill(128);
   resetRealtimeBeatEngine();
-  audioReady = true;
 }
 function resumeAudioAnalysis() {
   if (audioCtx && audioCtx.state === 'suspended') return audioCtx.resume().catch(function(e){ console.warn('audio context resume failed:', e); });
@@ -12008,7 +11999,13 @@ function fadeOutAndPauseAudio() {
         resolve(false);
         return;
       }
-      try { audio.pause(); } catch (pauseErr) { console.warn('[TogglePlayPause]', pauseErr); }
+      // 旧独立播放器已移除，这里只同步本地 UI 状态，不直接暂停真实媒体元素。
+      try {
+        audio.paused = true;
+        audio.ended = false;
+      } catch (pauseErr) {
+        console.warn('[TogglePlayPause]', pauseErr);
+      }
       setAudioOutputGainImmediate(0);
       resolve(true);
     }, AUDIO_FADE_OUT_MS + 80);
@@ -12283,7 +12280,6 @@ function pauseCurrentAudioForTrackSwitch() {
     audioFadeSerial++;
     clearAudioFadeTimers();
     audio.onended = null;
-    audio.pause();
   } catch (e) {}
   playing = false;
   setPlayIcon(false);
@@ -12341,124 +12337,19 @@ function scheduleAudioResumePosition(media, seconds, token) {
 
 async function playQueueAt(idx, opts) {
   opts = opts || {};
-  if (idx < 0 || idx >= playQueue.length) return;
-  markRenderInteraction('track-switch', 1500);
-  var playPhase = 'start';
-  function markPlayPhase(name) { playPhase = name; }
-  try {
-  markPlayPhase('session-finalize');
-  currentIdx = idx;
-  trackSwitchToken++;
-  markPlayPhase('cancel-previous-track');
-  cancelBeatAnalysisTimer();
-  cancelBeatPrefetchTimer();
-  if (localBeatAnalysis.active) cancelLocalBeatAnalysis();
-  closeGsapModal(document.getElementById('local-beat-modal'));
-  beatMapToken++;
-  var token = trackSwitchToken;
-  var firstVisualPlay = !firstPlayDone;
-  markPlayPhase('track-setup');
-  var song = safePlaybackStep('track-read', function(){ return playQueue[idx]; }) || playQueue[idx];
-  playQueue[idx] = song;
-  var playbackContext = opts.context || (song && song.radioContext) || null;
-  safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
-  safePlaybackStep('shelf-preview-suppress', suppressShelfPreviewForPlaybackSwitch);
-  pauseCurrentAudioForTrackSwitch();
-  var bmKey = safePlaybackStep('beatmap-key', function(){ return beatMapSongKey(song); }) || '';
-  var podcastDjMode = !!safePlaybackStep('podcast-mode', function(){ return isPodcastSong(song); });
-  safePlaybackStep('dj-mode', function(){ setDjModeActive(podcastDjMode, song); });
-  safePlaybackStep('visual-switch', switchPlaybackVisualToEmily);
-  currentLocalSong = null;
-  safePlaybackStep('cinema-track-profile', function(){ resetCinemaTrackProfile(song); });
-  safePlaybackStep('track-ui', function(){
-    document.getElementById('hint').classList.add('hidden');
-    document.getElementById('thumb-title').textContent = song.name;
-    document.getElementById('thumb-artist').textContent = song.artist;
-    updateControlTrackInfo(song);
-    document.getElementById('thumb-wrap').classList.add('visible');
-  });
-  markPlayPhase('lyric-prep');
-  safePlaybackStep('lyric-prep', function(){
-    applyLyricsState([], false, 'none');
-  });
-
-  markPlayPhase('cover-load');
-  safePlaybackStep('cover-load', function(){
-    var coverOpts = { trackToken: token, deferHeavy: true, delay: firstVisualPlay ? 380 : 680, timeout: firstVisualPlay ? 1400 : 1900 };
-    var cover = songCoverSrc(song, 400);
-    if (isInlineCoverSrc(cover)) applyCoverDataUrl(cover, coverOpts);
-    else loadCoverFromUrl(cover, coverOpts);
-  });
-  safePlaybackStep('trial-banner-reset', function(){ document.getElementById('trial-banner').classList.remove('show'); });
-  safePlaybackStep('show-loading', showLoading);
-  lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
-
-  // 首次播放: 粒子从暗处浮出 (Apple 风格)
-  if (firstVisualPlay) {
-    safePlaybackStep('first-visual-alpha', function(){
-      firstPlayDone = true;
-      tweenParticleAlpha(uniforms.uAlpha.value || 0, 1.0, 220);
-    });
-  }
-
-  try {
-    markPlayPhase('source-url');
-    hideLoading();
-    forcePlaybackControlsInteractive();
-    showToast('在线音乐功能已移除，请在 EchoMusic 中播放或管理歌曲');
-    return;
-  } catch (err) {
-    console.error('Play failed:', { phase: playPhase, error: err }, err);
-    hideLoading();
-    forcePlaybackControlsInteractive();
-    if (!isPlaybackRecursionError(err) && token === trackSwitchToken && !opts.manual && playQueue.length > 1) {
-      skipFailedQueueItem(idx, token, '当前歌曲加载失败，正在尝试队列里的下一首。');
-      return;
-    }
-    showToast(playbackFailureToastText(err));
-  }
-  } catch (setupErr) {
-    console.error('Play setup failed:', { phase: playPhase, error: setupErr }, setupErr);
-    hideLoading();
-    forcePlaybackControlsInteractive();
-    if (!isPlaybackRecursionError(setupErr) && typeof token !== 'undefined' && token === trackSwitchToken && !opts.manual && playQueue.length > 1) {
-      skipFailedQueueItem(idx, token, '当前歌曲切换失败，正在尝试队列里的下一首。');
-      return;
-    }
-    showToast(playbackFailureToastText(setupErr));
-  }
+  hideLoading();
+  forcePlaybackControlsInteractive();
+  if (!opts.silent) showToast('请在 EchoMusic 中播放或管理歌曲');
+  return false;
 }
 async function attemptAudioPlay(opts) {
   opts = opts || {};
-  try {
-      if (!audio) return false;
-      if (!audioReady) initAudio();
-      if (opts.fade !== false) preparePlaybackFadeIn();
-      if (opts.manual) {
-        var manualPlay = audio.play();
-        await resumeAudioAnalysis();
-        await manualPlay;
-      } else {
-        await resumeAudioAnalysis();
-        await audio.play();
-      }
-      await resumeAudioAnalysis();
-      switchPlaybackVisualToEmily();
-      playing = true; setPlayIcon(true);
-    if (opts.fade !== false) startPlaybackFadeIn();
-    else restorePlaybackGain();
-    forcePlaybackControlsInteractive();
-    hideLoading();
-    return true;
-  } catch (err) {
-    console.warn('Audio play blocked:', err && (err.message || err));
-    restorePlaybackGain();
-    playing = false; setPlayIcon(false);
-    hideLoading();
-    forcePlaybackControlsInteractive();
-    if (!opts.silent) showToast(opts.manual ? '播放启动失败, 请重新选择歌曲' : '播放被系统拦截, 请点击播放按钮');
-    return false;
-  }
+  hideLoading();
+  forcePlaybackControlsInteractive();
+  playing = !!(audio && audio.__echoBridgeAudio && !audio.paused);
+  setPlayIcon(playing);
+  if (!opts.silent) showToast('请在 EchoMusic 中播放歌曲');
+  return false;
 }
 async function playAudio(opts) {
   opts = opts || {};
@@ -12469,29 +12360,15 @@ async function togglePlay() {
   playToggleBusy = true;
   try {
     forcePlaybackControlsInteractive();
-    if ((!audio || !audio.src) && playQueue.length && currentIdx >= 0) {
-      await playQueueAt(currentIdx, { manual: true });
-      return;
-    }
-    if (!audio) return;
-    if (audio.paused || audio.ended) {
-      await attemptAudioPlay({ manual: true });
-    } else {
-      await fadeOutAndPauseAudio();
-      playing = false;
-      setPlayIcon(false);
-      hideLoading();
-      forcePlaybackControlsInteractive();
-      safePlaybackStep('sync-pause-state', function(){ syncPlaybackStateFromAudioEvent('manual-pause'); });
-      safePlaybackStep('pause-controls-hide', function(){ scheduleControlsHide(520); });
-    }
+    hideLoading();
+    showToast('请在 EchoMusic 中播放或暂停歌曲');
   } catch (err) {
     console.warn('[TogglePlay]', err);
-    playing = !!(audio && !audio.paused);
+    playing = !!(audio && audio.__echoBridgeAudio && !audio.paused);
     setPlayIcon(playing);
     hideLoading();
     forcePlaybackControlsInteractive();
-    if (!audio || !audio.src) showToast('播放控制失败');
+    showToast('播放控制失败');
   } finally {
     playToggleBusy = false;
   }
@@ -12502,19 +12379,14 @@ function setPlayIcon(p) {
     : '<path d="M8 5v14l11-7z"/>';
 }
 function nextTrack() {
-  if (!playQueue.length) return;
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  if (playMode === 'shuffle') currentIdx = Math.floor(Math.random() * playQueue.length);
-  else currentIdx = (currentIdx + 1) % playQueue.length;
-  Promise.resolve(playQueueAt(currentIdx)).finally(forcePlaybackControlsInteractive);
+  showToast('请在 EchoMusic 中切换下一首');
 }
 function prevTrack() {
-  if (!playQueue.length) return;
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  currentIdx = (currentIdx - 1 + playQueue.length) % playQueue.length;
-  Promise.resolve(playQueueAt(currentIdx)).finally(forcePlaybackControlsInteractive);
+  showToast('请在 EchoMusic 中切换上一首');
 }
 function shuffleQueue() {
   for (var i = playQueue.length - 1; i > 0; i--) {
