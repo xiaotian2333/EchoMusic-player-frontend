@@ -181,14 +181,11 @@ var djMode = {
   lastBeatAt: -10
 };
 
-function isPodcastSong(song) {
-  return !!(song && song.type === 'podcast');
-}
-
 function djSongKey(song) {
   if (!song) return '';
   if (song.localKey) return 'local:' + song.localKey;
-  return 'podcast:' + (song.programId || song.id || song.name || '');
+  if (songProviderKey(song) === 'qq') return 'qq:' + (song.mid || song.songmid || song.id || (song.name + '|' + song.artist));
+  return 'song:' + (song.id || song.name || '');
 }
 
 function resetDjModeMeter() {
@@ -1191,10 +1188,9 @@ function cinemaAnalysisProfileForSong(song) {
 }
 
 function resetCinemaTrackProfile(song) {
-  var isDj = isPodcastSong(song);
-  cinemaTrackProfile.scale = isDj ? 1.08 : 1.0;
-  cinemaTrackProfile.target = isDj ? 1.10 : 1.0;
-  cinemaTrackProfile.nameHint = isDj ? 1.12 : cinemaTrackNameHint(song);
+  cinemaTrackProfile.scale = 1.0;
+  cinemaTrackProfile.target = 1.0;
+  cinemaTrackProfile.nameHint = cinemaTrackNameHint(song);
   cinemaTrackProfile.frames = 0;
   cinemaTrackProfile.energyAvg = 0;
   cinemaTrackProfile.lowAvg = 0;
@@ -1939,7 +1935,7 @@ function updateBeatCamera(dt) {
     return;
   }
   if (beatCam.prevAudioTime >= 0 && Math.abs(t - beatCam.prevAudioTime) > 0.55) {
-    if (djMode.active) syncPodcastDjMapCursor(t, false);
+    if (djMode.active) syncDjBeatMapCursor(t, false);
     else syncBeatCameraToTime(t);
   }
   beatCam.prevAudioTime = t;
@@ -6991,7 +6987,7 @@ function hideBeatChip() {
 // 每帧调用 — 按 beatMap 触发预演鼓点
 function syncBeatMapPlaybackCursor(t, preserveVisualState) {
   if (djMode.active) {
-    syncPodcastDjMapCursor(t, preserveVisualState);
+    syncDjBeatMapCursor(t, preserveVisualState);
     return;
   }
   t = isFinite(t) ? t : 0;
@@ -7004,7 +7000,7 @@ function syncBeatMapPlaybackCursor(t, preserveVisualState) {
   else syncBeatCameraToTime(t);
 }
 
-function syncPodcastDjMapCursor(t, preserveVisualState) {
+function syncDjBeatMapCursor(t, preserveVisualState) {
   t = isFinite(t) ? t : 0;
   djBeatMapNextIdx = 0;
   djBeatPulseNextIdx = 0;
@@ -7019,7 +7015,7 @@ function syncPodcastDjMapCursor(t, preserveVisualState) {
   if (!preserveVisualState) resetBeatCameraSync(t);
 }
 
-function tickPodcastDjBeatMap() {
+function tickDjBeatMap() {
   if (!djMode.active || !currentDjBeatMap || !audio || audio.paused) return;
   var t = audio.currentTime || 0;
   if (currentDjBeatMap.partialUntilSec && t > currentDjBeatMap.partialUntilSec + beatCam.lookahead) return;
@@ -8213,7 +8209,6 @@ function makeContentListManager() {
   var open = false;
   var centerTarget = 0, centerSmooth = 0;
   var playlistTitle = '';
-  var contentKind = 'playlist';
   var sourceCard = null;
   var requestToken = 0;
   var openAnimAt = -10;
@@ -8279,12 +8274,9 @@ function makeContentListManager() {
     ctx.fillText(ellipsize(ctx, playlistTitle || '队列详情', W - 310), 72, 92);
     ctx.font = '500 18px Inter, "Microsoft YaHei", Arial';
     ctx.fillStyle = canvasAccent(0.62);
-    var playableCount = allTracks.filter(function(song){ return song && song.id && song.type !== 'podcast-radio'; }).length;
-    var contentCount = allTracks.filter(function(song){ return song && song.id; }).length;
+    var playableCount = allTracks.filter(function(song){ return song && song.id; }).length;
     var isLoading = allTracks.length === 1 && isLoadingLabel(allTracks[0] && allTracks[0].name);
-    var countLabel = contentKind === 'podcast'
-      ? (contentCount ? (contentCount + ' 项播客内容') : (isLoading ? '正在载入' : '暂无播客内容'))
-      : (playableCount ? (playableCount + ' 首歌曲') : (isLoading ? '正在载入' : '暂无可播放歌曲'));
+    var countLabel = playableCount ? (playableCount + ' 首歌曲') : (isLoading ? '正在载入' : '暂无可播放歌曲');
     ctx.fillText(countLabel, 74, 128);
     var coverUrl = sourceCard && sourceCard.item && sourceCard.item.cover;
     var coverSize = 96, coverX = W - 172, coverY = 56;
@@ -8346,9 +8338,8 @@ function makeContentListManager() {
   function drawRow(row, song, isCenter) {
     var cv = row.canvas, ctx = cv.getContext('2d');
     var W = cv.width, H = cv.height;
-    var isPodcastRadio = !!(song && song.type === 'podcast-radio');
-    var playable = !!(song && song.id && !isPodcastRadio);
-    var actionReady = playable || isPodcastRadio;
+    var playable = !!(song && song.id);
+    var actionReady = playable;
     ctx.clearRect(0, 0, W, H);
     makeRoundRect(ctx, 14, 10, W - 28, H - 20, 22);
     var rowGrad = ctx.createLinearGradient(0, 0, W, H);
@@ -8405,7 +8396,7 @@ function makeContentListManager() {
     var textX = (actionReady || hasSongCover) ? 154 : 82;
     var btnW = 104, btnH = 48, btnX = W - 144, btnY = H/2 - btnH/2;
     var miniBtn = 44, nextX = btnX - 52;
-    var textMax = actionReady && isCenter ? (isPodcastRadio ? btnX - textX - 24 : nextX - textX - 24) : W - textX - 42;
+    var textMax = actionReady && isCenter ? nextX - textX - 24 : W - textX - 42;
     var loadingRow = !playable && isLoadingLabel(song && song.name);
     if (loadingRow) {
       ctx.font = '700 22px Inter, "Microsoft YaHei", Arial';
@@ -8435,7 +8426,6 @@ function makeContentListManager() {
     ctx.fillText(ellipsize(ctx, song.artist || '', textMax), textX, 72);
     // center 行右侧显示下一首/播放按钮
     if (isCenter && actionReady) {
-      if (!isPodcastRadio) {
       makeRoundRect(ctx, nextX, btnY + 2, miniBtn, btnH - 4, 15);
       var nextGrad = ctx.createLinearGradient(nextX, btnY + 2, nextX + miniBtn, btnY + btnH);
       nextGrad.addColorStop(0, 'rgba(255,255,255,0.082)');
@@ -8457,7 +8447,6 @@ function makeContentListManager() {
       ctx.moveTo(nextCx - 8, nextCy);
       ctx.lineTo(nextCx + 8, nextCy);
       ctx.stroke();
-      }
 
       makeRoundRect(ctx, btnX, btnY, btnW, btnH, 18);
       var btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY + btnH);
@@ -8656,7 +8645,6 @@ function makeContentListManager() {
       try {
         // 在线歌单入口已移除，仅保留宿主队列展示。
         disposeRows();
-        contentKind = 'playlist';
         allTracks = [{ name: '在线歌单已移除', artist: '播放队列由宿主同步' }];
         centerTarget = 0; centerSmooth = 0;
         panelDirty = true;
@@ -8679,7 +8667,6 @@ function makeContentListManager() {
       panel = null;
       renderedStart = -1;
       allTracks = [];
-      contentKind = 'playlist';
       sourceCard = null;
       panelDirty = true;
       rowsDirty = true;
@@ -8874,7 +8861,7 @@ function makeContentListManager() {
       if (!row || !row.mesh || !row.mesh.visible) return null;
       var song = row.song || {};
       var isCenter = Math.abs(row.index - Math.round(centerSmooth)) < 0.5;
-      if (!isCenter || !((song && song.id) || song.type === 'podcast-radio')) return null;
+      if (!isCenter || !(song && song.id)) return null;
       var params = row.mesh.geometry && row.mesh.geometry.parameters || {};
       var hw = (params.width || 2.50) / 2;
       var hh = (params.height || 0.36) / 2;
@@ -8906,12 +8893,6 @@ function makeContentListManager() {
       pulseObjectValue(row, 'fxPulse', 1.0, 0.34);
       var idx = row.index;
       if (idx < 0) return;
-      if (row.song && row.song.type === 'podcast-radio') {
-        loadPodcastRadioIntoQueue(row.song.id || row.song.radioId, true, row.song.name || playlistTitle);
-        var smRadio = shelfManager;
-        if (smRadio) safeShelfCloseContent('content-play-podcast-radio');
-        return;
-      }
       var songToPlay = row.song && row.song.id ? row.song : null;
       if (!songToPlay) return;
       forcePlaybackControlsInteractive();
@@ -9063,15 +9044,15 @@ renderer.domElement.addEventListener('click', function(e){
       if (rowHit) {
         if (cl.pulseRow) cl.pulseRow(rowHit.row, 0.72);
         var selectedRow = Math.abs(rowHit.row.index - cl.getCenterIdx()) < 0.5;
-        var rowIsPodcastRadio = !!(rowHit.row.song && rowHit.row.song.type === 'podcast-radio');
+        var rowIsPlayable = !!(rowHit.row.song && rowHit.row.song.id);
         var hitNextButton = rowHit.uv && rowHit.uv.x >= 0.75 && rowHit.uv.x < 0.82 && rowHit.uv.y > 0.20 && rowHit.uv.y < 0.82;
         var hitPlayButton = rowHit.uv && rowHit.uv.x >= 0.82 && rowHit.uv.y > 0.20 && rowHit.uv.y < 0.82;
         var screenAction = (!rowHit.uv && cl.rowActionAtScreen) ? cl.rowActionAtScreen(rowHit.row, e.clientX, e.clientY) : null;
         hitNextButton = hitNextButton || screenAction === 'next';
         hitPlayButton = hitPlayButton || screenAction === 'play';
-        if (selectedRow && !rowIsPodcastRadio && hitNextButton) {
+        if (selectedRow && rowIsPlayable && hitNextButton) {
           queueDetailSongNext(rowHit.row.song);
-        } else if ((rowHit.row.song && rowHit.row.song.id) || rowIsPodcastRadio || (selectedRow && hitPlayButton)) {
+        } else if (rowIsPlayable || (selectedRow && rowIsPlayable && hitPlayButton)) {
           cl.playRow(rowHit.row);
         } else {
           // 滚到这行
@@ -9123,7 +9104,7 @@ renderer.domElement.addEventListener('contextmenu', function(e){
     var rc = raycasterFromPointerEvent(e);
     var cl = shelfManager.getContentList && shelfManager.getContentList();
     var rowHit = cl && cl.raycastRows ? cl.raycastRows(rc) : null;
-    if (rowHit && rowHit.row && rowHit.row.song && rowHit.row.song.id && rowHit.row.song.type !== 'podcast-radio') {
+    if (rowHit && rowHit.row && rowHit.row.song && rowHit.row.song.id) {
       if (cl.pulseRow) cl.pulseRow(rowHit.row, 0.88);
       queueDetailSongNext(rowHit.row.song);
       return;
@@ -9306,16 +9287,6 @@ function coverUrlWithSize(url, size) {
   if (/[?&]param=\d+y\d+/i.test(url)) return url.replace(/([?&])param=\d+y\d+/i, '$1' + param);
   return url + (url.indexOf('?') >= 0 ? '&' : '?') + param;
 }
-function songStorageKey(song) {
-  if (!song) return '';
-  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'qq:' + (song.mid || song.songmid || song.id || (song.name + '|' + song.artist));
-  if (song.localKey) return 'local:' + song.localKey;
-  if (song.type === 'podcast' && song.programId) return 'podcast:' + song.programId;
-  if (song.id != null && song.id !== '') return 'id:' + song.id;
-  var title = String(song.name || song.title || '').trim();
-  var artist = String(song.artist || '').trim();
-  return (title || artist) ? ('meta:' + (title + '|' + artist).slice(0, 220)) : '';
-}
 function songCoverSrc(song, size) {
   var cover = song && (song.cover || song.coverUrl || song.picUrl || song.albumCover || song.albumImg || song.img || song.image || song.cover_url);
   return cover ? coverUrlWithSize(cover, size) : '';
@@ -9324,17 +9295,6 @@ function cssImageUrl(url) {
   return String(url || '').replace(/\\/g, '\\\\').replace(/"/g, '%22');
 }
 function currentCoverSong() {
-  if (currentIdx >= 0 && playQueue[currentIdx]) return playQueue[currentIdx];
-  return currentLocalSong || null;
-}
-function songSourceLabel(song) {
-  if (!song) return '未知';
-  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'QQ 音乐';
-  if (song.type === 'local') return '本地文件';
-  if (song.type === 'podcast' || song.source === 'podcast') return '网易云播客';
-  return '网易云音乐';
-}
-function currentLyricSong() {
   if (currentIdx >= 0 && playQueue[currentIdx]) return playQueue[currentIdx];
   return currentLocalSong || null;
 }
@@ -9606,7 +9566,7 @@ function requestHostPlayNextSong(song) {
   return true;
 }
 function queueDetailSongNext(song) {
-  if (!song || song.type === 'podcast-radio') return;
+  if (!song) return;
   requestHostPlayNextSong(song);
   if (typeof showToast === 'function') showToast('已发送下一首: ' + (song.name || ''));
 }
@@ -10145,13 +10105,6 @@ function renderQueuePanel(opts) {
   if (opts.animate && seq === queueRenderSeq) animateVisiblePanelList($ql, '.queue-item', document.getElementById('playlist-panel'), '.queue-item.now');
   renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
 }
-async function loadPodcastRadioIntoQueue(id, autoplay, title) {
-  showToast('在线播客功能已移除');
-}
-async function loadPlaylistIntoQueueById(id, autoplay, title) {
-  showToast('在线歌单功能已移除');
-}
-
 // 进度条
 var progressDragState = { active: false, lastParticleAt: 0 };
 function normalizePlaybackDurationSeconds(value) {
@@ -13484,7 +13437,7 @@ function getDesktopWindowApi() {
 }
 function currentDesktopSongMeta() {
   var song = playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
-  song = song || currentLyricSong && currentLyricSong() || {};
+  song = song || currentLocalSong || {};
   return {
     title: song.name || song.title || 'Mineradio',
     artist: song.artist || song.ar || song.author || '',
@@ -13845,7 +13798,7 @@ function animate() {
     beatPulse *= Math.pow(0.36, dt);
 
     // v7.2+: 预解析 beatmap 只在实时引擎暂时没锁住时补位.
-    tickPodcastDjBeatMap();
+    tickDjBeatMap();
     tickBeatMap();
     if (scheduledBeatFlag) {
       beatOnsetFlag = true;
