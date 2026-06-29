@@ -586,8 +586,6 @@ var controlsAutoHide = readBooleanPreference(CONTROLS_AUTO_HIDE_STORE_KEY, false
 var controlsHovering = false;
 // 控制条隐藏延迟计时器。
 var controlsHideTimer = null;
-// 控制条把手变暗延迟计时器。
-var controlsHandleDimTimer = null;
 // 最近一次控制区域指针移动时间。
 var controlsLastMoveAt = 0;
 // 歌单架交互期间临时抑制控制条自动隐藏的截止时间。
@@ -2870,7 +2868,6 @@ function suppressBottomControlsForShelf(duration) {
     clearTimeout(controlsHideTimer);
     controlsHideTimer = null;
   }
-  document.body.classList.remove('controls-handle-awake');
   if (miniQueueOpen) closeMiniQueue();
   var bar = document.getElementById('bottom-bar');
   if (bar) {
@@ -2897,29 +2894,17 @@ function revealBottomControls(delay) {
   // 歌单架抑制期间不显示底部控制条。
   if (isBottomControlsSuppressedForShelf()) return;
   if (bar) bar.classList.add('visible');
-  wakeBottomHandle();
   setControlsHidden(false);
   if (controlsAutoHide) scheduleControlsHide(delay == null ? 520 : delay);
 }
 
-// 同步 body 和底部把手的控制条可见状态类名。
+// 同步 body 的控制条可见状态类名。
 function updateControlsChromeState() {
   var bar = document.getElementById('bottom-bar');
-  var handle = document.getElementById('bottom-handle');
   var active = !!(bar && bar.classList.contains('visible') && !bar.classList.contains('soft-hidden'));
   document.body.classList.toggle('controls-visible', active);
-  if (handle) handle.classList.toggle('active', active);
 }
 
-// 短暂唤醒底部把手，让用户知道控制条入口位置。
-function wakeBottomHandle(duration) {
-  document.body.classList.add('controls-handle-awake');
-  if (controlsHandleDimTimer) clearTimeout(controlsHandleDimTimer);
-  controlsHandleDimTimer = setTimeout(function(){
-    controlsHandleDimTimer = null;
-    document.body.classList.remove('controls-handle-awake');
-  }, duration == null ? 2000 : duration);
-}
 
 // 强制恢复播放控制按钮的可交互状态。
 function forcePlaybackControlsInteractive() {
@@ -2948,14 +2933,6 @@ function forcePlaybackControlsInteractive() {
   }
 }
 
-// 点击底部把手时显示控制条。
-function toggleBottomControlsFromHandle() {
-  var bar = document.getElementById('bottom-bar');
-  if (!bar) return;
-  if (isBottomControlsSuppressedForShelf()) return;
-  revealBottomControls(900);
-}
-
 // 根据指针位置更新控制条自动隐藏状态。
 function updateControlsAutoHideFromPointer(x, y) {
   if (isBottomControlsSuppressedForShelf()) return;
@@ -2974,15 +2951,11 @@ function updateControlsAutoHideFromPointer(x, y) {
   }
   controlsLastMoveAt = performance.now();
   var rect = bar.getBoundingClientRect();
-  var handle = document.getElementById('bottom-handle');
-  var hr = handle ? handle.getBoundingClientRect() : null;
-  var overHandle = hr && x >= hr.left - 18 && x <= hr.right + 18 && y >= hr.top - 12 && y <= hr.bottom + 14;
   var overBar = x >= rect.left - 18 && x <= rect.right + 18 && y >= rect.top - 18 && y <= rect.bottom + 14;
   var mini = document.getElementById('mini-queue-popover');
   var miniRect = mini ? mini.getBoundingClientRect() : null;
   var overMini = miniQueueOpen && miniRect && x >= miniRect.left - 16 && x <= miniRect.right + 16 && y >= miniRect.top - 16 && y <= miniRect.bottom + 16;
-  if (overHandle) wakeBottomHandle();
-  if (overBar || overMini || overHandle) revealBottomControls(overHandle ? 900 : 520);
+  if (overBar || overMini) revealBottomControls(520);
   else scheduleControlsHide(70);
 }
 
@@ -3014,15 +2987,13 @@ function applyControlsAutoHidePreference() {
   setControlsHidden(false);
 }
 
-// 初始化控制条悬停、离开和底部把手事件。
+// 初始化控制条悬停、离开事件。
 (function initControlsAutoHide() {
   var bar = document.getElementById('bottom-bar');
-  var handle = document.getElementById('bottom-handle');
   if (!bar) return;
   // 进入控制条区域时保持显示并取消隐藏计时器。
   function enterControls(){
     controlsHovering = true;
-    wakeBottomHandle();
     setControlsHidden(false);
     if (controlsHideTimer) { clearTimeout(controlsHideTimer); controlsHideTimer = null; }
   }
@@ -3030,18 +3001,9 @@ function applyControlsAutoHidePreference() {
   function leaveControls(){
     controlsHovering = false;
     scheduleControlsHide(70);
-    wakeBottomHandle(900);
   }
   bar.addEventListener('mouseenter', enterControls);
   bar.addEventListener('mouseleave', leaveControls);
-  if (handle) {
-    handle.addEventListener('mouseenter', function(){
-      controlsHovering = true;
-      revealBottomControls(900);
-    });
-    handle.addEventListener('mouseleave', leaveControls);
-    handle.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); toggleBottomControlsFromHandle(); });
-  }
   updateControlsChromeState();
 })();
 
@@ -3129,7 +3091,7 @@ var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 // 鼠标按下后移动超过该像素距离视为拖拽，不再触发点击动作。
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
 // 这些 UI 区域会阻止画布拖拽和粒子交互。
-var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#trial-banner,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
+var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
 
 // 判断指针是否位于播放器 UI 控件上。
 function isPointerOverUi(e) {
@@ -12157,9 +12119,7 @@ function hostCommandSong(song) {
 }
 // 向 EchoMusic 宿主发送桥接命令。
 function sendEchoHostCommand(name, payload) {
-  if (typeof window.__echoBridgeCommand !== 'function') return false;
   window.__echoBridgeCommand(name, payload || {});
-  return true;
 }
 // 请求宿主播放指定歌曲。
 function requestHostPlaySong(song) {
@@ -15331,7 +15291,7 @@ function updateImmersiveButton() {
 // 关闭进入沉浸模式时会干扰画面的弹层和提示。
 function closeImmersiveInterference() {
   closeMiniQueue();
-  ['trial-banner', 'ai-depth-chip', 'beat-chip'].forEach(function(id){
+  ['ai-depth-chip', 'beat-chip'].forEach(function(id){
     // 需要隐藏的提示节点。
     var el = document.getElementById(id);
     if (el) el.classList.remove('peek', 'show', 'closing');
@@ -17283,53 +17243,45 @@ function startMainLoopSafely() {
   // 安装宿主播放代理 audio 对象。
   function installAudioShim() {
     // 旧播放器内部大量逻辑依赖 audio 对象；这里用伪 audio 接管读写，并把播放控制转成宿主命令。
-    if (!audio || !audio.__echoBridgeAudio) {
-      // 伪 audio 只维护状态和访问器，不创建真实媒体流。
-      audio = {
-        // 标记该对象由桥接层创建。
-        __echoBridgeAudio: true,
-        // 当前暂停状态。
-        paused: true,
-        // 桥接模式不使用 HTMLMediaElement ended 事件。
-        ended: false,
-        // 当前时间通过宿主时钟外推。
-        get currentTime() { return bridgeCurrentTime(); },
-        // seek 写入本地时钟，具体跳转由命令触发。
-        set currentTime(value) { setBridgeClockTime(value); },
-        // 当前总时长。
-        duration: 0,
-        // 播放速度。
-        playbackRate: 1,
-        // 占位 src，避免旧代码把 audio 当成未初始化。
-        src: 'echo-plugin-host',
-        // 兼容旧封面/音频逻辑读取跨域字段。
-        crossOrigin: 'anonymous',
-        // 事件接口占位，兼容旧绑定代码。
-        addEventListener: function() {},
-        // 事件解绑接口占位。
-        removeEventListener: function() {},
-        // load 接口占位。
-        load: function() {},
-        // play 被旧代码调用时转成宿主播放命令。
-        play: function() { requestBridgePlayback(true); return Promise.resolve(); },
-        // pause 被旧代码调用时转成宿主暂停命令。
-        pause: function() { requestBridgePlayback(false); },
-      };
-    }
+    // 伪 audio 只维护状态和访问器，不创建真实媒体流。
+    audio = {
+      // 当前暂停状态。
+      paused: true,
+      // 桥接模式不使用 HTMLMediaElement ended 事件。
+      ended: false,
+      // 当前时间通过宿主时钟外推。
+      get currentTime() { return bridgeCurrentTime(); },
+      // seek 写入本地时钟，具体跳转由命令触发。
+      set currentTime(value) { setBridgeClockTime(value); },
+      // 当前总时长。
+      duration: 0,
+      // 播放速度。
+      playbackRate: 1,
+      // 占位 src，避免旧代码把 audio 当成未初始化。
+      src: 'echo-plugin-host',
+      // 兼容旧封面/音频逻辑读取跨域字段。
+      crossOrigin: 'anonymous',
+      // 事件接口占位，兼容旧绑定代码。
+      addEventListener: function() {},
+      // 事件解绑接口占位。
+      removeEventListener: function() {},
+      // load 接口占位。
+      load: function() {},
+      // play 被旧代码调用时转成宿主播放命令。
+      play: function() { requestBridgePlayback(true); return Promise.resolve(); },
+      // pause 被旧代码调用时转成宿主暂停命令。
+      pause: function() { requestBridgePlayback(false); },
+    };
   }
 
   // 强制旧播放器界面进入桥接模式首屏。
   function forcePlayerSurface() {
-    // 强制显示旧播放器控制面，隐藏旧入口手柄，保证 iframe 首屏就是可交互播放器。
+    // 标记桥接模式，显示底部控制条，确保 iframe 首屏就是可交互播放器。
     document.body.classList.add('echo-plugin-bridge');
-    // 底部控制条节点。
     var bottom = document.getElementById('bottom-bar');
     if (bottom) bottom.classList.add('visible');
-    // 旧底部入口手柄节点。
-    var handle = document.getElementById('bottom-handle');
-    if (handle) handle.style.display = 'none';
-    if (typeof setControlsHidden === 'function') setControlsHidden(false);
-    if (typeof forcePlaybackControlsInteractive === 'function') forcePlaybackControlsInteractive();
+    setControlsHidden(false);
+    forcePlaybackControlsInteractive();
   }
 
   // 请求刷新 Three.js 主渲染视口。
