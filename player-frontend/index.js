@@ -8929,19 +8929,10 @@ function makeContentListManager() {
         if (smRadio) safeShelfCloseContent('content-play-podcast-radio');
         return;
       }
-      var playIndex = allTracks.slice(0, idx + 1).filter(function(song){ return song && song.id; }).length - 1;
-      var allSongs = allTracks.filter(function(song){ return song && song.id; }).map(function(song){
-        return cloneSong(song);
-      });
-      if (!allSongs.length || playIndex < 0) return;
-      playQueue = allSongs;
-      currentIdx = playIndex;
-      safeRenderQueuePanel('content-play-row');
-      safeShelfRebuild('content-play-row');
+      var songToPlay = row.song && row.song.id ? row.song : null;
+      if (!songToPlay) return;
       forcePlaybackControlsInteractive();
-      playQueueAt(playIndex).catch(function(e){
-        console.warn('[ContentPlayRow]', e);
-      });
+      requestHostPlaySong(songToPlay);
       // 关闭内容框
       var sm = shelfManager;
       if (sm) safeShelfCloseContent('content-play-row');
@@ -9751,67 +9742,50 @@ function bindVolumeControls() {
 // ============================================================
 //  播放队列
 // ============================================================
-function queueItemKey(song) {
-  if (!song) return '';
-  if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'qq:' + (song.mid || song.songmid || song.id || (song.name + '|' + song.artist));
-  if (song.type === 'podcast' && song.programId) return 'podcast:' + song.programId;
-  if (song.localKey) return 'local:' + song.localKey;
-  if (song.id != null && song.id !== '') return 'song:' + song.id;
-  return String(song.name || '') + '|' + String(song.artist || '');
+function hostCommandSong(song) {
+  if (!song) return null;
+  var cloned = typeof cloneSong === 'function' ? cloneSong(song) : Object.assign({}, song);
+  var id = cloned.id != null && cloned.id !== '' ? cloned.id : (cloned.hash || cloned.trackId || '');
+  var hash = cloned.hash || id;
+  if (id == null || id === '') return null;
+  cloned.id = String(id);
+  cloned.hash = String(hash || id);
+  cloned.title = cloned.title || cloned.name || '未知歌曲';
+  cloned.name = cloned.name || cloned.title;
+  cloned.artist = cloned.artist || '未知歌手';
+  cloned.coverUrl = cloned.coverUrl || cloned.cover || '';
+  cloned.cover = cloned.cover || cloned.coverUrl || '';
+  cloned.duration = Number(cloned.duration || 0);
+  return cloned;
 }
-function queueSong(song, opts) {
-  opts = opts || {};
-  if (!song) return -1;
-  var cloned = cloneSong(song);
-  var insertAt = playQueue.length;
-  if (opts.position === 'next') {
-    var key = queueItemKey(cloned);
-    var existing = -1;
-    if (key) {
-      for (var i = 0; i < playQueue.length; i++) {
-        if (queueItemKey(playQueue[i]) === key) { existing = i; break; }
-      }
-    }
-    if (existing === currentIdx) return currentIdx;
-    if (existing >= 0) {
-      cloned = playQueue.splice(existing, 1)[0];
-      if (currentIdx >= 0 && existing < currentIdx) currentIdx -= 1;
-    }
-    var hasCurrent = currentIdx >= 0 && currentIdx < playQueue.length;
-    insertAt = hasCurrent ? Math.min(playQueue.length, currentIdx + 1) : playQueue.length;
-    playQueue.splice(insertAt, 0, cloned);
-  } else {
-    playQueue.push(cloned);
-    insertAt = playQueue.length - 1;
+function sendEchoHostCommand(name, payload, fallbackMessage) {
+  if (window.__echoBridgeCommand) {
+    window.__echoBridgeCommand(name, payload || {});
+    return true;
   }
-  safeRenderQueuePanel('queue-song');
-  safeShelfRebuild('queue-song');
-  return insertAt;
+  if (typeof showToast === 'function') showToast(fallbackMessage || '请在 EchoMusic 中操作播放队列');
+  return false;
 }
-function queueSongNext(song) {
-  return queueSong(song, { position: 'next' });
+function requestHostPlaySong(song) {
+  var payloadSong = hostCommandSong(song);
+  if (!payloadSong) return false;
+  return sendEchoHostCommand('play-song', { song: payloadSong }, '请在 EchoMusic 中播放歌曲');
+}
+function requestHostPlayNextSong(song) {
+  var payloadSong = hostCommandSong(song);
+  if (!payloadSong) return false;
+  return sendEchoHostCommand('queue-play-next-song', { song: payloadSong }, '请在 EchoMusic 中管理下一首');
 }
 function queueDetailSongNext(song) {
   if (!song || song.type === 'podcast-radio') return;
-  queueSongNext(song);
-  showToast('已设为下一首: ' + (song.name || ''));
+  if (requestHostPlayNextSong(song) && typeof showToast === 'function') {
+    showToast('已发送下一首: ' + (song.name || ''));
+  }
 }
-function queueIndexNext(i) {
+function requestHostPlayNextIndex(i) {
   i = Number(i);
   if (!isFinite(i) || i < 0 || i >= playQueue.length) return;
-  var song = playQueue[i];
-  queueSongNext(song);
-  showToast('已设为下一首: ' + (song && song.name ? song.name : ''));
-}
-function moveQueueIndexToTop(idx) {
-  idx = Number(idx);
-  if (!isFinite(idx) || idx < 0 || idx >= playQueue.length) return -1;
-  if (idx === 0) return 0;
-  var item = playQueue.splice(idx, 1)[0];
-  playQueue.unshift(item);
-  if (currentIdx === idx) currentIdx = 0;
-  else if (currentIdx >= 0 && currentIdx < idx) currentIdx += 1;
-  return 0;
+  sendEchoHostCommand('queue-play-next-index', { index: i }, '请在 EchoMusic 中管理下一首');
 }
 var firstPlayDone = false;
 
@@ -9850,36 +9824,6 @@ function showSourceFallbackNotice(title, body) {
   notice.classList.add('show');
   if (sourceFallbackNoticeTimer) clearTimeout(sourceFallbackNoticeTimer);
   sourceFallbackNoticeTimer = setTimeout(closeSourceFallbackNotice, 5000);
-}
-function markQueueItemPlaybackFailed(idx) {
-  if (playQueue[idx]) playQueue[idx]._lastPlaybackFailAt = Date.now();
-}
-function nextUnblockedQueueIndex(idx) {
-  var now = Date.now();
-  for (var step = 1; step < playQueue.length; step++) {
-    var nextIdx = (idx + step) % playQueue.length;
-    var failedAt = Number(playQueue[nextIdx] && playQueue[nextIdx]._lastPlaybackFailAt) || 0;
-    if (!failedAt || now - failedAt > 18000) return nextIdx;
-  }
-  return -1;
-}
-function skipFailedQueueItem(idx, token, message) {
-  hideLoading();
-  forcePlaybackControlsInteractive();
-  if (token !== trackSwitchToken) return;
-  markQueueItemPlaybackFailed(idx);
-  if (playQueue.length <= 1) {
-    showSourceFallbackNotice('当前歌曲不可播放', message || '当前歌曲不可播放，队列里没有其他歌曲。');
-    return;
-  }
-  var nextIdx = nextUnblockedQueueIndex(idx);
-  if (nextIdx < 0) {
-    showSourceFallbackNotice('队列暂时没有可播歌曲', '已尝试跳过不可播放歌曲，当前队列没有新的可播放项。');
-    return;
-  }
-  showSourceFallbackNotice('已跳过不可播放歌曲', message || '当前歌曲不可播放，正在播放下一首。');
-  currentIdx = nextIdx;
-  playQueueAt(nextIdx);
 }
 function pauseCurrentAudioForTrackSwitch() {
   playToggleBusy = false;
@@ -9947,7 +9891,9 @@ async function playQueueAt(idx, opts) {
   opts = opts || {};
   hideLoading();
   forcePlaybackControlsInteractive();
-  if (!opts.silent) showToast('请在 EchoMusic 中播放或管理歌曲');
+  idx = Number(idx);
+  if (!isFinite(idx) || idx < 0) return false;
+  sendEchoHostCommand('play-index', { index: idx }, '请在 EchoMusic 中播放或管理歌曲');
   return false;
 }
 async function attemptAudioPlay(opts) {
@@ -9989,33 +9935,23 @@ function setPlayIcon(p) {
 function nextTrack() {
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  showToast('请在 EchoMusic 中切换下一首');
+  sendEchoHostCommand('next', {}, '请在 EchoMusic 中切换下一首');
 }
 function prevTrack() {
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  showToast('请在 EchoMusic 中切换上一首');
+  sendEchoHostCommand('prev', {}, '请在 EchoMusic 中切换上一首');
 }
 function shuffleQueue() {
-  for (var i = playQueue.length - 1; i > 0; i--) {
-    var j = Math.floor(Math.random() * (i + 1));
-    var tmp = playQueue[i]; playQueue[i] = playQueue[j]; playQueue[j] = tmp;
-  }
-  currentIdx = 0; safeRenderQueuePanel('shuffle-queue');
-  showToast('队列已随机');
-  safeShelfRebuild('shuffle-queue');
+  sendEchoHostCommand('set-mode', { mode: 'random' }, '请在 EchoMusic 中切换随机播放');
 }
 function clearQueue() {
-  playQueue = []; currentIdx = -1;
-  safeRenderQueuePanel('clear-queue');
-  safeShelfRebuild('clear-queue');
+  sendEchoHostCommand('queue-clear', {}, '请在 EchoMusic 中管理当前队列');
 }
 function removeFromQueue(idx) {
-  if (idx < 0 || idx >= playQueue.length) return;
-  playQueue.splice(idx, 1);
-  if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;
-  safeRenderQueuePanel('remove-queue-item');
-  safeShelfRebuild('remove-queue-item');
+  idx = Number(idx);
+  if (!isFinite(idx) || idx < 0) return;
+  sendEchoHostCommand('queue-remove-index', { index: idx }, '请在 EchoMusic 中管理当前队列');
 }
 function playModeLabel(mode) {
   return { loop: '顺序循环', shuffle: '随机播放', single: '单曲循环' }[mode] || '顺序循环';
@@ -10065,11 +10001,7 @@ function updatePlayModeButton(animate) {
 }
 
 function cyclePlayMode() {
-  var modes = ['loop', 'shuffle', 'single'];
-  var idx = modes.indexOf(playMode);
-  playMode = modes[(idx + 1) % modes.length];
-  updatePlayModeButton(true);
-  showToast('播放模式: ' + playModeLabel(playMode));
+  sendEchoHostCommand('cycle-mode', {}, '请在 EchoMusic 中切换播放模式');
 }
 updatePlayModeButton(false);
 
@@ -10475,7 +10407,7 @@ function renderMiniQueuePanel(opts) {
     return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="mini-queue-info"><div class="mini-queue-name">' + escHtml(song.name) + '</div><div class="mini-queue-sub">' + escHtml(song.artist || '') + '</div></div>' +
-      '<button class="mini-queue-remove mini-queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
+      '<button class="mini-queue-remove mini-queue-next" onclick="event.stopPropagation();requestHostPlayNextIndex(' + i + ')" title="下一首播放">下</button>' +
       '<button class="mini-queue-remove" onclick="event.stopPropagation();removeFromQueue(' + i + ')" title="移除">×</button>' +
     '</div>';
   }).join('');
@@ -10507,7 +10439,7 @@ function renderQueuePanel(opts) {
       imgTag +
       '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub">' + escHtml(song.artist || '未知歌手') + '</div></div>' +
       '<div class="qi-act">' +
-        '<button class="queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
+        '<button class="queue-next" onclick="event.stopPropagation();requestHostPlayNextIndex(' + i + ')" title="下一首播放">下</button>' +
         '<button onclick="event.stopPropagation();removeFromQueue(' + i + ')" title="移除">×</button>' +
       '</div>' +
     '</div>';
@@ -14407,6 +14339,7 @@ function startMainLoopSafely() {
   function command(name, payload) {
     post('echo-player-frontend:command', Object.assign({ command: name }, payload || {}));
   }
+  window.__echoBridgeCommand = command;
 
   function bridgeNow() {
     return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -14832,9 +14765,7 @@ function startMainLoopSafely() {
 
   function applyQueue(snapshot) {
     var queue = Array.isArray(snapshot.queue) ? snapshot.queue : [];
-    var currentBridgeSong = normalizeBridgeSong(snapshot.track);
-    var currentTrackId = String(snapshot.currentTrackId || currentBridgeSong.id || currentBridgeSong.hash || '');
-    var key = currentTrackId + '|' + String(snapshot.currentQueueIndex == null ? '' : snapshot.currentQueueIndex) + '|' + bridgeSongCover(snapshot.track) + '|' + queue.length + '|' + queue.map(function(song) {
+    var key = String(snapshot.currentQueueIndex == null ? '' : snapshot.currentQueueIndex) + '|' + queue.length + '|' + queue.map(function(song) {
       return [
         String(song && (song.id || song.hash) || ''),
         bridgeSongCover(song)
@@ -14845,21 +14776,7 @@ function startMainLoopSafely() {
     playQueue = queue.map(normalizeBridgeSong);
     currentIdx = Number(snapshot.currentQueueIndex);
     if (!isFinite(currentIdx) || currentIdx < 0 || currentIdx >= playQueue.length) {
-      currentIdx = playQueue.findIndex(function(song) {
-        return String(song.id) === currentTrackId;
-      });
-    }
-    if (currentBridgeSong.cover) {
-      var fillIndex = currentIdx;
-      if (fillIndex < 0 || fillIndex >= playQueue.length) {
-        fillIndex = playQueue.findIndex(function(song) {
-          return String(song.id) === currentTrackId || String(song.hash) === currentTrackId;
-        });
-      }
-      if (fillIndex >= 0 && playQueue[fillIndex] && !playQueue[fillIndex].cover) {
-        playQueue[fillIndex].cover = currentBridgeSong.cover;
-        playQueue[fillIndex].coverUrl = currentBridgeSong.cover;
-      }
+      currentIdx = -1;
     }
     playlist = playQueue.slice();
     if (typeof renderQueuePanel === 'function') renderQueuePanel({ scrollCurrent: true });
@@ -15023,9 +14940,22 @@ function startMainLoopSafely() {
   prevTrack = function() { command('prev'); };
   cyclePlayMode = function() { command('cycle-mode'); };
   playQueueAt = function(index) { command('play-index', { index: Number(index) || 0 }); };
-  shuffleQueue = function() { if (typeof showToast === 'function') showToast('请在 EchoMusic 中管理队列顺序'); };
-  clearQueue = function() { if (typeof showToast === 'function') showToast('请在 EchoMusic 中管理当前队列'); };
-  removeFromQueue = function() { if (typeof showToast === 'function') showToast('请在 EchoMusic 中管理当前队列'); };
+  requestHostPlayNextIndex = function(index) { command('queue-play-next-index', { index: Number(index) || 0 }); };
+  queueDetailSongNext = function(song) {
+    var payloadSong = hostCommandSong(song);
+    if (!payloadSong) return;
+    command('queue-play-next-song', { song: payloadSong });
+    if (typeof showToast === 'function') showToast('已发送下一首: ' + (song.name || ''));
+  };
+  requestHostPlaySong = function(song) {
+    var payloadSong = hostCommandSong(song);
+    if (!payloadSong) return false;
+    command('play-song', { song: payloadSong });
+    return true;
+  };
+  shuffleQueue = function() { command('set-mode', { mode: 'random' }); };
+  clearQueue = function() { command('queue-clear'); };
+  removeFromQueue = function(index) { command('queue-remove-index', { index: Number(index) || 0 }); };
   toggleLyricsPanel = function() {
     if (typeof setParticleLyricsSilently === 'function') setParticleLyricsSilently(!fx.particleLyrics);
   };

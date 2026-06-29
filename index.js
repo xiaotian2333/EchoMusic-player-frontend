@@ -151,6 +151,7 @@ function createPlayerFrame(ctx, closeOverlay) {
         const songs = Array.isArray(activeQueue?.songs) ? activeQueue.songs : []
         return {
           queueId: activeQueue?.id ?? ctx.stores.playlist.activeQueueId ?? null,
+          currentTrackId: activeQueue?.currentTrackId ?? null,
           songs,
         }
       }
@@ -261,7 +262,8 @@ function createPlayerFrame(ctx, closeOverlay) {
         const queueState = getQueueState()
         const queue = queueState.songs.map(normalizeSong).filter(Boolean)
         const currentId = String(player.currentTrackId ?? current?.id ?? '')
-        const currentQueueIndex = queue.findIndex((song) => String(song.id) === currentId)
+        const currentQueueTrackId = String(queueState.currentTrackId ?? currentId)
+        const currentQueueIndex = queue.findIndex((song) => String(song.id) === currentQueueTrackId)
 
         return {
           track: current,
@@ -341,14 +343,79 @@ function createPlayerFrame(ctx, closeOverlay) {
         ctx.player.setPlayMode(playModeOrder[(index + 1) % playModeOrder.length])
       }
 
-      const playQueueIndex = async (index) => {
+      const getQueueSongAt = (index) => {
+        const normalizedIndex = Number(index)
+        if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0) return null
         const queueState = getQueueState()
-        const song = queueState.songs[index]
-        if (!song?.id) return
-        await ctx.player.playTrack(song.id, {
+        const song = queueState.songs[normalizedIndex]
+        if (!song?.id && !song?.hash) return null
+        return { queueState, song }
+      }
+
+      const queueOptions = (queueState) =>
+        queueState?.queueId == null ? undefined : { queueId: queueState.queueId }
+
+      const commandSong = (song) => {
+        const source = song || {}
+        const normalized = normalizeSong(source)
+        if (!normalized?.id && !normalized?.hash) return null
+        return {
+          ...source,
+          ...normalized,
+          id: String(source.id ?? source.trackId ?? source.hash ?? normalized.id ?? ''),
+          hash: text(source.hash || normalized.hash || normalized.id),
+          audioUrl: text(source.audioUrl || source.url),
+          mixSongId: source.mixSongId ?? source.mixsongid ?? 0,
+        }
+      }
+
+      const playQueueIndex = async (index) => {
+        const target = getQueueSongAt(index)
+        if (!target) return
+        const { queueState, song } = target
+        const trackId = song.id || song.hash
+        if (!trackId) return
+        await ctx.player.playTrack(trackId, {
           playlist: queueState.songs,
           sourceQueueId: queueState.queueId,
         })
+      }
+
+      const playCommandSong = async (song) => {
+        const target = commandSong(song)
+        if (!target) return
+        await ctx.player.playSong(target)
+      }
+
+      const playNextCommandSong = async (song) => {
+        const target = commandSong(song)
+        if (!target) return
+        await ctx.player.playNext(target)
+      }
+
+      const playNextQueueIndex = async (index) => {
+        const target = getQueueSongAt(index)
+        if (!target) return
+        await ctx.player.playNext(target.song, queueOptions(target.queueState))
+      }
+
+      const removeQueueIndex = async (index) => {
+        const target = getQueueSongAt(index)
+        if (!target) return
+        const trackId = target.song.id || target.song.hash
+        if (!trackId) return
+        await ctx.playlist.remove(trackId, target.queueState.queueId)
+      }
+
+      const clearQueue = async () => {
+        const queueState = getQueueState()
+        await ctx.playlist.clear(queueState.queueId)
+      }
+
+      const setPlayMode = (mode) => {
+        const normalized = String(mode || '')
+        if (!playModeOrder.includes(normalized)) return
+        ctx.player.setPlayMode(normalized)
       }
 
       const executeCommand = async (data) => {
@@ -364,6 +431,12 @@ function createPlayerFrame(ctx, closeOverlay) {
           ctx.player.setVolume(Math.max(0, Math.min(1, Number(data.value) || 0)))
         } else if (data.command === 'cycle-mode') cyclePlayMode()
         else if (data.command === 'play-index') await playQueueIndex(Number(data.index))
+        else if (data.command === 'play-song') await playCommandSong(data.song)
+        else if (data.command === 'queue-play-next-song') await playNextCommandSong(data.song)
+        else if (data.command === 'queue-play-next-index') await playNextQueueIndex(Number(data.index))
+        else if (data.command === 'queue-remove-index') await removeQueueIndex(Number(data.index))
+        else if (data.command === 'queue-clear') await clearQueue()
+        else if (data.command === 'set-mode') setPlayMode(data.mode)
         else if (data.command === 'close') closeOverlay()
         else if (data.command === 'mini-player') void window.electron?.miniPlayer?.show?.()
         else if (data.command === 'window-control') {
