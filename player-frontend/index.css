@@ -287,7 +287,6 @@ body.immersive-mode #hand-canvas,
 body.immersive-mode #hint,
 body.immersive-mode #idle-guide-canvas,
 body.immersive-mode #toast,
-body.immersive-mode #source-fallback-notice,
 body.immersive-mode .modal-mask{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
 body.immersive-mode .modal-mask{display:none!important}
 body.immersive-mode #bottom-bar.visible{z-index:32;bottom:22px;width:min(620px,calc(100vw - 56px));padding:10px 20px 13px;gap:9px;border-radius:22px;background:radial-gradient(circle at 20% 0%,rgba(255,255,255,.13),transparent 35%),linear-gradient(112deg,rgba(255,255,255,.060),rgba(12,15,18,.45) 52%,rgba(2,4,7,.58));border-color:rgba(255,255,255,.060);box-shadow:0 20px 70px rgba(0,0,0,.32),0 0 42px rgba(152,221,255,.055),inset 0 1px 0 rgba(255,255,255,.15),inset 0 -22px 58px rgba(0,0,0,.18);backdrop-filter:blur(46px) saturate(1.36);-webkit-backdrop-filter:blur(46px) saturate(1.36)}
@@ -374,13 +373,6 @@ body.immersive-mode::after{content:'';position:fixed;left:0;right:0;bottom:0;hei
 /* ---------- toast ---------- */
 #toast{position:fixed;z-index:200;top:84px;left:50%;transform:translateX(-50%) translateY(-8px);background:rgba(20,20,28,0.95);border:1px solid rgba(255,255,255,0.12);color:#fff;padding:10px 18px;border-radius:10px;font-size:12.5px;letter-spacing:.5px;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;backdrop-filter:blur(20px)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#source-fallback-notice{position:fixed;z-index:201;top:72px;right:24px;width:min(330px,calc(100vw - 48px));padding:13px 14px;border-radius:14px;border:1px solid rgba(157,184,207,.24);background:rgba(12,13,18,.86);color:rgba(255,255,255,.86);box-shadow:0 20px 54px rgba(0,0,0,.40),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(26px) saturate(1.25);-webkit-backdrop-filter:blur(26px) saturate(1.25);opacity:0;pointer-events:none;transform:translateY(-8px);transition:opacity .26s,transform .26s}
-#source-fallback-notice.show{opacity:1;pointer-events:auto;transform:translateY(0)}
-.source-fallback-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px}
-.source-fallback-title{font-size:12.5px;font-weight:700;letter-spacing:.35px;color:#eaf2ff}
-.source-fallback-close{width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);color:rgba(255,255,255,.62);cursor:pointer;line-height:20px;font-size:15px;transition:background .2s,color .2s}
-.source-fallback-close:hover{background:rgba(255,255,255,.10);color:#fff}
-.source-fallback-body{font-size:11.5px;line-height:1.55;color:rgba(255,255,255,.58)}
 
 /* ===== css/05-fx-console.css ===== */
 /* ============================================================ */
@@ -669,14 +661,14 @@ body.desktop-shell.controls-visible #fx-fab{bottom:126px}
 #play-btn{border:0!important;background:rgba(0,0,0,.10)!important;box-shadow:inset 0 0 2px 1px rgba(255,255,255,.34),inset 0 0 10px 4px rgba(255,255,255,.13),0 10px 30px rgba(0,0,0,.18)!important}
 #play-btn:hover{background:rgba(255,255,255,.055)!important;box-shadow:inset 0 0 2px 1px rgba(255,255,255,.42),inset 0 0 12px 5px rgba(255,255,255,.17),0 12px 34px rgba(0,0,0,.22),0 0 18px rgba(var(--fc-accent-rgb),.10)!important;color:#fff}
 /* Unified saved glass: keep panels in the same texture as the player bar. */
-#fx-panel,#playlist-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.cover-color-pop,.color-lab-pop,.volume-popover,.mini-queue-popover,.pl-inline-detail,.local-beat-track{
+#fx-panel,#playlist-panel,#trial-banner,#toast,#ai-depth-chip,#beat-chip,.modal,.cover-color-pop,.color-lab-pop,.volume-popover,.mini-queue-popover,.pl-inline-detail,.local-beat-track{
   background:var(--saved-panel-glass-bg)!important;
   border-color:transparent!important;
   box-shadow:var(--saved-panel-glass-shadow)!important;
   backdrop-filter:var(--saved-panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--saved-panel-glass-filter)!important;
 }
-html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #playlist-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .volume-popover,html.control-glass-svg-ok .mini-queue-popover,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
+html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #playlist-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .volume-popover,html.control-glass-svg-ok .mini-queue-popover,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
   backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
   -webkit-backdrop-filter:var(--saved-panel-glass-svg-filter)!important;
 }
@@ -736,14 +728,14 @@ html.control-glass-svg-ok .icon-btn,html.control-glass-svg-ok #fx-fab,html.contr
   --panel-glass-shadow:0 24px 78px rgba(0,0,0,.44),0 0 0 1px rgba(255,255,255,.045),inset 0 1px 0 rgba(255,255,255,.18),inset 0 -18px 42px rgba(0,0,0,.16);
   --panel-button-bg:linear-gradient(145deg,rgba(255,255,255,.075),rgba(var(--fc-accent-rgb),.060) 46%,rgba(0,0,0,.14));
 }
-#fx-panel,#trial-banner,#toast,#source-fallback-notice,#ai-depth-chip,#beat-chip,.modal,.cover-color-pop,.color-lab-pop,.pl-inline-detail,.local-beat-track{
+#fx-panel,#trial-banner,#toast,#ai-depth-chip,#beat-chip,.modal,.cover-color-pop,.color-lab-pop,.pl-inline-detail,.local-beat-track{
   background:var(--panel-glass-bg)!important;
   border-color:rgba(255,255,255,.075)!important;
   box-shadow:var(--panel-glass-shadow)!important;
   backdrop-filter:var(--panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--panel-glass-filter)!important;
 }
-html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #source-fallback-notice,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
+html.control-glass-svg-ok #fx-panel,html.control-glass-svg-ok #trial-banner,html.control-glass-svg-ok #toast,html.control-glass-svg-ok #ai-depth-chip,html.control-glass-svg-ok #beat-chip,html.control-glass-svg-ok .modal,html.control-glass-svg-ok .cover-color-pop,html.control-glass-svg-ok .color-lab-pop,html.control-glass-svg-ok .pl-inline-detail,html.control-glass-svg-ok .local-beat-track{
   backdrop-filter:var(--panel-glass-filter)!important;
   -webkit-backdrop-filter:var(--panel-glass-filter)!important;
 }

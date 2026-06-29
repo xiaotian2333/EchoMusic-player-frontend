@@ -2545,7 +2545,7 @@ var particlePointerLocalHit = new THREE.Vector3();
 var particlePointerQuat = new THREE.Quaternion();
 var particlePointerFrame = { dirty:false, ndcX:0, ndcY:0 };
 var CLICK_THRESHOLD = 6;  // 像素, 拖动 > 6px 视为 drag
-var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#trial-banner,#source-fallback-notice,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
+var UI_HIT_SELECTOR = '#top-right,#fx-panel,#fx-fab,#playlist-panel,#bottom-bar,#thumb-wrap,#trial-banner,.modal-mask,#toast,#ai-depth-chip,#beat-chip';
 
 function isPointerOverUi(e) {
   if (!e) return false;
@@ -9789,42 +9789,6 @@ function requestHostPlayNextIndex(i) {
 }
 var firstPlayDone = false;
 
-function playbackProviderLabel(song) {
-  return songProviderKey(song) === 'qq' ? 'QQ 音乐' : '网易云';
-}
-function playbackRestrictionMessage(song, data) {
-  data = data || {};
-  var restriction = data.restriction || {};
-  var category = data.reason || restriction.category || '';
-  var provider = playbackProviderLabel(song);
-  var message = data.message || restriction.message || '';
-  if (!message) {
-    if (category === 'login_required') message = provider + '需要账号授权，当前不可播放';
-    else if (category === 'vip_required') message = provider + '歌曲需要会员权限';
-    else if (category === 'paid_required') message = provider + '歌曲需要购买或更高权限';
-    else if (category === 'trial_only') message = provider + '仅返回试听片段';
-    else if (category === 'copyright_unavailable') message = provider + '版权暂不可播';
-    else message = provider + '没有返回可播放地址';
-  }
-  return message;
-}
-var sourceFallbackNoticeTimer = null;
-function closeSourceFallbackNotice() {
-  var notice = document.getElementById('source-fallback-notice');
-  if (sourceFallbackNoticeTimer) { clearTimeout(sourceFallbackNoticeTimer); sourceFallbackNoticeTimer = null; }
-  if (notice) notice.classList.remove('show');
-}
-function showSourceFallbackNotice(title, body) {
-  var notice = document.getElementById('source-fallback-notice');
-  var titleEl = document.getElementById('source-fallback-title');
-  var bodyEl = document.getElementById('source-fallback-body');
-  if (!notice || !titleEl || !bodyEl) return;
-  titleEl.textContent = title || '播放提示';
-  bodyEl.textContent = body || '';
-  notice.classList.add('show');
-  if (sourceFallbackNoticeTimer) clearTimeout(sourceFallbackNoticeTimer);
-  sourceFallbackNoticeTimer = setTimeout(closeSourceFallbackNotice, 5000);
-}
 function pauseCurrentAudioForTrackSwitch() {
   playToggleBusy = false;
   if (!audio) return;
