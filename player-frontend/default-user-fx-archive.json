@@ -77,7 +77,6 @@
     "shelfAngleYManual": false,
     "shelfOpacity": 1,
     "shelfBgOpacity": 0.9,
-    "shelfAccentColor": "#ffffff",
-    "cam": "off"
+    "shelfAccentColor": "#ffffff"
   }
 }

@@ -187,7 +187,7 @@
 
   <div class="fx-fold" id="fx-stage-fold">
     <div class="fx-fold-head" onclick="document.getElementById('fx-stage-fold').classList.toggle('open')">
-      <span class="fx-fold-title"><strong>3D / 手势</strong><small>歌单架 / 摄像头交互</small></span><span class="arrow">▶</span>
+      <span class="fx-fold-title"><strong>3D 视角</strong><small>歌单架 / 镜头控制</small></span><span class="arrow">▶</span>
     </div>
     <div class="fx-fold-body">
       <div class="fx-section-label">3D 歌单架</div>
@@ -220,12 +220,6 @@
       <div class="fx-slider"><label>侧向角度</label><input id="fx-shelfangle" type="range" min="-30" max="30" step="1"><output></output></div>
       <div class="fx-slider"><label>整体透明度</label><input id="fx-shelfopacity" type="range" min="0.25" max="1" step="0.01"><output></output></div>
       <div class="fx-slider"><label>背景透明度</label><input id="fx-shelfbgalpha" type="range" min="0.25" max="0.98" step="0.01"><output></output></div>
-
-      <div class="fx-section-label">摄像头交互</div>
-      <div class="fx-seg" id="cam-seg">
-        <button data-cam="off" class="active">关闭</button>
-        <button data-cam="gesture">手势触碰</button>
-      </div>
     </div>
   </div>
 
@@ -301,15 +295,6 @@
 
 <!-- 舞台歌词 (大字 3D, 由 JS 动态填充) -->
 <div id="stage-lyrics"></div>
-
-<!-- 手势 HUD + 手骨架 -->
-<div id="gesture-hud" class="gesture-hud">
-  <div>手势：<b id="gesture-label">待命</b></div>
-  <div id="gesture-confirm" class="gesture-confirm">将手放进摄像头视野</div>
-  <div class="gesture-meter"><span id="gesture-fill"></span></div>
-  <div class="gesture-legend">手掌推开粒子 · 捏合旋转 · 握拳收束</div>
-</div>
-<canvas id="hand-canvas"></canvas>
 
 <!-- 左下小封面 -->
 <div id="thumb-wrap">
