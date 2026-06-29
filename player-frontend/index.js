@@ -9294,8 +9294,10 @@ function clearShelfPreviewOnPointerExit() {
   if (hasContent && shelfManager.closeContent) safeShelfCloseContent('shelf-mode-reset');
   // 固定展开时同步关闭固定状态。
   if (shelfPinnedOpen) setShelfPinnedOpen(false, true);
-  // 立即清零整体可见度。
-  shelfVisibility = 0;
+  // 常驻模式下不清零可见度，避免鼠标离开时歌单架闪烁。
+  if (!shelfAlwaysVisible()) {
+    shelfVisibility = 0;
+  }
   // 清空相机焦点区。
   if (typeof setFocusZone === 'function') setFocusZone(null, true);
 }
