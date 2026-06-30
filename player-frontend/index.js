@@ -7116,7 +7116,7 @@ function makeLyricShaderMaterial(mask, pal) {
       // 太阳暖光颜色。
       uSolarColor: { value: lyricThreeColor(pal.highlight || pal.secondary || pal.primary, '#fff0b8', 0.50) },
       // 原生逐字歌词使用更窄羽化，没有逐字时更柔和。
-      uFeather: { value: lyricsHasNativeKaraoke ? 0.030 : 0.055 },
+      uFeather: { value: lyricsHasNativeKaraoke ? 0.100 : 0.220 },
       // 太阳暖光混合强度。
       uSolar: { value: 0 },
     },
@@ -7852,7 +7852,7 @@ function tickLyricsParticles() {
   }
   // 当前播放时间。
   var t = audio.currentTime;
-  // 找到当前应该显示的歌词行索引。
+  // 基于本地音频时间搜索当前歌词行（参考 EchoMusic-Lyrics-WinIsland 时间驱动模式）。
   var newIdx = -1;
   for (var i = 0; i < lyricsLines.length; i++) {
     if (lyricsLines[i].t <= t + 0.05) newIdx = i; else break;
@@ -12849,7 +12849,7 @@ function updatePlaybackProgressUi() {
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
-// 定时刷新播放进度和歌词高亮状态。
+// 本地刷新播放进度和歌词高亮状态，不向宿主请求数据。
 setInterval(function(){
   if (!audio) { updatePlaybackProgressUi(); return; }
   updatePlaybackProgressUi();
@@ -17020,31 +17020,25 @@ function startMainLoopSafely() {
     return Math.max(0, t);
   }
 
-  // 应用宿主推送的轻量播放进度包。
-  function applyProgressPayload(payload) {
-    // 轻量进度包高频到达，只更新播放时钟、伪 audio 和进度 UI，不触发完整界面重建。
+  // 应用宿主推送的定位包（事件驱动，取代高频进度轮询）。
+  function applyPositionPayload(payload) {
     payload = payload || {};
-    // 宿主位置毫秒。
     var positionMs = Number(payload.position_ms);
-    // 宿主总时长毫秒。
     var durationMs = Number(payload.duration_ms);
     if (!isFinite(positionMs)) positionMs = Number(payload.currentTime || 0) * 1000;
     if (!isFinite(durationMs)) durationMs = Number(payload.duration || 0) * 1000;
-    // 宿主播放状态。
     var hostPlaying = payload.is_playing != null ? !!payload.is_playing : !!payload.isPlaying;
     // 合并本地乐观状态后的播放状态。
     var effectivePlaying = resolveBridgePlaybackPlaying(hostPlaying);
     bridgePlaybackClock.time = Math.max(0, positionMs || 0) / 1000;
     bridgePlaybackClock.duration = Math.max(0, durationMs || 0) / 1000;
     bridgePlaybackClock.playing = effectivePlaying;
-    bridgePlaybackClock.rate = Math.max(0.25, Math.min(4, Number(payload.playback_rate || payload.rate) || 1));
     bridgePlaybackClock.receivedAt = bridgeNow();
     playing = bridgePlaybackClock.playing;
     if (audio) {
       audio.paused = !playing;
       audio.ended = false;
       audio.duration = bridgePlaybackClock.duration;
-      audio.playbackRate = bridgePlaybackClock.rate;
     }
     if (bridgeSnapshot) {
       bridgeSnapshot.currentTime = bridgePlaybackClock.time;
@@ -17454,6 +17448,8 @@ function startMainLoopSafely() {
         charCount: Math.max(1, characters.length ? characters[characters.length - 1].c1 : text.length),
         // 歌词来源标识。
         source: line.source || 'echo',
+        // 保留宿主原始歌词行号，过滤占位行后仍能映射 current_index。
+        sourceIndex: line.source_index != null ? Number(line.source_index) : index,
       };
     }).filter(function(line){ return line.text && !isNoLyricText(line.text); });
     // 是否存在可用的原生逐字时间。
@@ -17514,9 +17510,15 @@ function startMainLoopSafely() {
     var song = normalizeBridgeSong(rawTrack);
     // 当前歌曲总时长。
     var duration = Math.max(0, Number(snapshot.duration || song.duration || 0));
+    // 当前歌曲播放位置，完整快照也可作为本地时钟锚点。
+    var snapshotTime = Number(snapshot.currentTime);
+    if (!isFinite(snapshotTime)) snapshotTime = bridgeCurrentTime();
     playing = hasTrack && snapshotPlaying;
+    bridgePlaybackClock.time = Math.max(0, snapshotTime || 0);
     bridgePlaybackClock.duration = duration;
     bridgePlaybackClock.playing = playing;
+    bridgePlaybackClock.rate = 1;
+    bridgePlaybackClock.receivedAt = bridgeNow();
     audio.paused = !playing;
     audio.ended = false;
     audio.duration = duration;
@@ -17756,9 +17758,9 @@ function startMainLoopSafely() {
     } else if (data.type === 'echo-player-frontend:lyrics') {
       // 歌词消息只刷新歌词缓存和显示层。
       applyLyricsPayload(data.payload);
-    } else if (data.type === 'echo-player-frontend:progress') {
-      // 进度消息高频到达，只更新时钟和进度 UI。
-      applyProgressPayload(data.payload);
+    } else if (data.type === 'echo-player-frontend:position') {
+      // 位置消息事件驱动到达，更新播放时钟锚点。
+      applyPositionPayload(data.payload);
     } else if (data.type === 'echo-player-frontend:spectrum') {
       // 频谱消息只写入宿主频谱帧，主循环下一帧再消费。
       var spectrum = data.payload || {};

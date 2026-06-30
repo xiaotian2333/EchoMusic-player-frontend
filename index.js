@@ -130,23 +130,15 @@ function createPlayerFrame(ctx, closeOverlay) {
       const loadError = ref('')
       let ready = false
       let disposed = false
-      let frameId = 0
-      let lastSnapshotAt = 0
-      let lastLyricsCheckAt = 0
       let lastLyricsKey = ''
-      let lastProgressAt = 0
       let lastSpectrumFrame = null
       let spectrumDispose = null
+      let lyricStoreUnsub = null
+      let lastLyricStoreKey = ''
+      let stopTrackWatch = null
       let commandQueue = Promise.resolve()
-      // 进度锚点用于在两次宿主状态推送之间本地补偿播放时间，减少 iframe 进度条抖动。
-      let progressAnchor = {
-        positionMs: 0,
-        hostPositionMs: 0,
-        durationMs: 0,
-        isPlaying: false,
-        receivedAt: 0,
-        initialized: false,
-      }
+      // 位置心跳定时器，每 5 秒向 iframe 推送一次当前进度，防止长时间播放后时钟漂移。
+      let positionHeartbeatTimer = null
 
       // 所有发往 iframe 的消息都带上固定 source，子页面据此区分宿主消息和其他窗口消息。
       const postToFrame = (payload) => {
@@ -235,46 +227,18 @@ function createPlayerFrame(ctx, closeOverlay) {
           track_id: currentId,
           hash,
           lines,
-          current_index: Number(lyric.currentIndex ?? -1),
           tips: lyric.isLoading ? '歌词加载中...' : lyric.tips || '',
         }
       }
 
-      // 构造播放进度 payload。宿主时间跳变、播放状态改变或强制刷新时会重置锚点。
-      const buildProgressPayload = (forceAnchor = false) => {
+      // 构造位置 payload，直接读取宿主当前时间（事件驱动，无需锚点外推）。
+      const buildPositionPayload = (cause) => {
         const player = ctx.stores.player
-        const now = performance.now()
-        const hostPositionMs = Math.max(0, Number(player.currentTime || 0) * 1000)
-        const durationMs = Math.max(0, Number(player.duration || 0) * 1000)
-        const isPlaying = Boolean(player.isPlaying)
-        const shouldResetAnchor =
-          forceAnchor ||
-          !progressAnchor.initialized ||
-          progressAnchor.isPlaying !== isPlaying ||
-          Math.abs(durationMs - progressAnchor.durationMs) > 1 ||
-          Math.abs(hostPositionMs - progressAnchor.hostPositionMs) > 25
-
-        if (shouldResetAnchor) {
-          progressAnchor = {
-            positionMs: hostPositionMs,
-            hostPositionMs,
-            durationMs,
-            isPlaying,
-            receivedAt: now,
-            initialized: true,
-          }
-        }
-
-        let positionMs = progressAnchor.positionMs
-        if (progressAnchor.isPlaying) {
-          positionMs += Math.max(0, now - progressAnchor.receivedAt)
-        }
-        if (durationMs > 0) positionMs = Math.min(durationMs + 120, positionMs)
-
         return {
-          position_ms: Math.max(0, Math.round(positionMs)),
-          duration_ms: Math.max(0, Math.round(durationMs)),
-          is_playing: isPlaying,
+          position_ms: Math.max(0, Math.round(Number(player.currentTime || 0) * 1000)),
+          duration_ms: Math.max(0, Math.round(Number(player.duration || 0) * 1000)),
+          is_playing: Boolean(player.isPlaying),
+          cause: cause || 'tick',
         }
       }
 
@@ -315,7 +279,7 @@ function createPlayerFrame(ctx, closeOverlay) {
         canShowMiniPlayer: typeof window.electron?.miniPlayer?.show === 'function',
       })
 
-      // 推送歌词时先尝试补齐歌词数据，再用 key 去重，避免无意义重绘。
+      // 推送歌词，仅事件驱动（歌词内容变更时调用），不再定时轮询。
       const pushLyrics = (force = false) => {
         if (!ready && !force) return
         ensureLyricLoaded()
@@ -328,42 +292,80 @@ function createPlayerFrame(ctx, closeOverlay) {
         })
       }
 
-      // 高频推送轻量进度数据，保证子页面控制条和歌词进度持续前进。
-      const pushProgress = (force = false) => {
-        if (!ready && !force) return
+      // 事件驱动的位置推送（取代轮询），仅在关键时机或低频心跳时发送。
+      const pushPosition = (cause) => {
+        if (!ready) return
         postToFrame({
-          type: 'echo-player-frontend:progress',
-          payload: buildProgressPayload(force),
+          type: 'echo-player-frontend:position',
+          payload: buildPositionPayload(cause),
         })
       }
 
-      // 推送完整快照前同步一次歌词索引，让 iframe 收到的当前歌词尽量贴近宿主状态。
+      // 推送完整快照，仅在曲目切换或命令完成后调用。
       const pushSnapshot = (force = false) => {
         if (!ready && !force) return
         ensureLyricLoaded()
-        ctx.stores.lyric.updateCurrentIndex?.(ctx.stores.player.currentTime || 0, true)
         postToFrame({
           type: 'echo-player-frontend:snapshot',
           payload: buildSnapshot(),
         })
       }
 
-      // 使用宿主页面的动画帧作为调度器，按不同节流间隔分别刷新快照、歌词和进度。
-      const animationLoop = (timestamp) => {
-        if (disposed) return
-        if (timestamp - lastSnapshotAt > 180) {
-          lastSnapshotAt = timestamp
-          pushSnapshot(false)
+      // 订阅歌词 store，仅在歌词内容（lines/loadedHash）变化时推送给 iframe。
+      const initLyricStoreSubscription = () => {
+        if (lyricStoreUnsub) return
+        const lyricStore = ctx.stores.lyric
+        const buildStoreKey = (state) =>
+          [
+            Array.isArray(state?.lines) ? state.lines.length : 0,
+            String(state?.loadedHash || ''),
+            Boolean(state?.isLoading) ? '1' : '0',
+            String(state?.tips || ''),
+          ].join('::')
+        lastLyricStoreKey = buildStoreKey(lyricStore)
+        if (typeof lyricStore.$subscribe === 'function') {
+          lyricStoreUnsub = lyricStore.$subscribe((mutation, state) => {
+            const nextKey = buildStoreKey(state)
+            if (nextKey === lastLyricStoreKey) return
+            lastLyricStoreKey = nextKey
+            pushLyrics(false)
+          })
         }
-        if (timestamp - lastLyricsCheckAt > 360) {
-          lastLyricsCheckAt = timestamp
-          pushLyrics(false)
+      }
+
+      // 监听曲目切换，事件驱动方式推送快照、歌词和位置。
+      const initTrackWatch = () => {
+        const getTrackId = () => {
+          const player = ctx.stores.player
+          const current = ctx.player.currentTrack.value || player.currentTrackSnapshot
+          return String(current?.id || current?.hash || player.currentTrackId || '')
         }
-        if (timestamp - lastProgressAt > 100) {
-          lastProgressAt = timestamp
-          pushProgress(false)
-        }
-        frameId = requestAnimationFrame(animationLoop)
+        let lastId = getTrackId()
+        stopTrackWatch = ctx.vue.watch(
+          getTrackId,
+          (newId) => {
+            if (!newId || newId === lastId) return
+            lastId = newId
+            pushSnapshot(true)
+            pushLyrics(true)
+            pushPosition('track_change')
+          },
+        )
+      }
+
+      // 位置心跳：每 5 秒推送一次当前进度，防止 iframe 本地时钟长时间漂移。
+      const startPositionHeartbeat = () => {
+        clearInterval(positionHeartbeatTimer)
+        positionHeartbeatTimer = setInterval(() => {
+          if (!ready || disposed) return
+          pushPosition('tick')
+        }, 5000)
+      }
+
+      // 停止位置心跳。
+      const stopPositionHeartbeat = () => {
+        clearInterval(positionHeartbeatTimer)
+        positionHeartbeatTimer = null
       }
 
       // 按固定顺序循环播放模式，供 iframe 的模式按钮调用。
@@ -492,7 +494,7 @@ function createPlayerFrame(ctx, closeOverlay) {
       const pushCommandResultState = () => {
         if (disposed) return
         pushSnapshot(true)
-        pushProgress(true)
+        pushPosition('command')
       }
 
       // 用 Promise 队列串行执行 iframe 命令，避免连续点击导致播放、队列操作交叉执行。
@@ -526,7 +528,7 @@ function createPlayerFrame(ctx, closeOverlay) {
             })
             pushSnapshot(true)
             pushLyrics(true)
-            pushProgress(true)
+            pushPosition('init')
             if (lastSpectrumFrame) {
               postToFrame({
                 type: 'echo-player-frontend:spectrum',
@@ -540,7 +542,7 @@ function createPlayerFrame(ctx, closeOverlay) {
           case 'echo-player-frontend:request-snapshot':
             pushSnapshot(true)
             pushLyrics(true)
-            pushProgress(true)
+            pushPosition('init')
             break
         }
       }
@@ -570,7 +572,9 @@ function createPlayerFrame(ctx, closeOverlay) {
         window.addEventListener('message', handleMessage)
         window.addEventListener('keydown', handleKeydown, true)
         void loadFrame()
-        frameId = requestAnimationFrame(animationLoop)
+        initLyricStoreSubscription()
+        initTrackWatch()
+        startPositionHeartbeat()
 
         try {
           // 订阅宿主音频频谱并转发给 iframe，用于驱动可视化；失败时静默降级为无频谱。
@@ -603,8 +607,11 @@ function createPlayerFrame(ctx, closeOverlay) {
         document.body.classList.remove('epf-overlay-open')
         window.removeEventListener('message', handleMessage)
         window.removeEventListener('keydown', handleKeydown, true)
-        if (frameId) cancelAnimationFrame(frameId)
-        frameId = 0
+        stopPositionHeartbeat()
+        if (lyricStoreUnsub) lyricStoreUnsub()
+        lyricStoreUnsub = null
+        if (stopTrackWatch) stopTrackWatch()
+        stopTrackWatch = null
         if (spectrumDispose) spectrumDispose()
         spectrumDispose = null
       })
