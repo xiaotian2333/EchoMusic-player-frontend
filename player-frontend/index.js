@@ -11606,38 +11606,10 @@ renderer.domElement.addEventListener('click', function(e){
   }
 });
 
-// 歌单架右键事件，用于固定侧边栏或把二级行加入下一首。
+// 画布右键保持无动作，仅阻止默认菜单。
 renderer.domElement.addEventListener('contextmenu', function(e){
-  if (isPointerOverUi(e)) return;
   e.preventDefault();
   e.stopPropagation();
-  if (typeof suppressBottomControlsForShelf === 'function') suppressBottomControlsForShelf(980);
-  if (!shelfManager) return;
-  // 当前歌单架模式。
-  var mode = shelfManager.getMode && shelfManager.getMode();
-  if (mode === 'off') {
-    // 右键时若歌单架关闭，则先打开侧边模式。
-    setShelfMode('side');
-    mode = 'side';
-  }
-  if (mode !== 'side') return;
-  if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
-    // 二级内容打开时，右键可把命中的歌曲加入下一首。
-    var rc = raycasterFromPointerEvent(e);
-    var cl = shelfManager.getContentList && shelfManager.getContentList();
-    var rowHit = cl && cl.raycastRows ? cl.raycastRows(rc) : null;
-    if (rowHit && rowHit.row && rowHit.row.song && rowHit.row.song.id) {
-      if (cl.pulseRow) cl.pulseRow(rowHit.row, 0.88);
-      queueDetailSongNext(rowHit.row.song);
-      return;
-    }
-    safeShelfCloseContent('shelf-context-toggle');
-    setShelfPinnedOpen(true, true);
-    return;
-  }
-  // 无二级内容时右键切换侧边栏固定展开状态。
-  setShelfPinnedOpen(!shelfPinnedOpen, true);
-  if (!shelfPinnedOpen && typeof setFocusZone === 'function') setFocusZone(null, true);
 });
 
 // 滚轮: 在真实卡片或右侧窄热区内滚卡片; 否则保留给封面粒子/视角
