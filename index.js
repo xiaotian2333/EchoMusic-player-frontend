@@ -136,6 +136,7 @@ function createPlayerFrame(ctx, closeOverlay) {
       let lyricStoreUnsub = null
       let lastLyricStoreKey = ''
       let stopTrackWatch = null
+      let stopVolumeWatch = null
       let commandQueue = Promise.resolve()
       // 位置心跳定时器，每 5 秒向 iframe 推送一次当前进度，防止长时间播放后时钟漂移。
       let positionHeartbeatTimer = null
@@ -349,6 +350,17 @@ function createPlayerFrame(ctx, closeOverlay) {
             pushSnapshot(true)
             pushLyrics(true)
             pushPosition('track_change')
+          },
+        )
+      }
+
+      // 监听主程序音量变更，同步推快照更新 iframe 侧音量滑块和音频。
+      const initVolumeWatch = () => {
+        stopVolumeWatch = ctx.vue.watch(
+          () => Number(ctx.stores.player.volume ?? 0.8),
+          () => {
+            if (!ready || disposed) return
+            pushSnapshot(true)
           },
         )
       }
@@ -574,6 +586,7 @@ function createPlayerFrame(ctx, closeOverlay) {
         void loadFrame()
         initLyricStoreSubscription()
         initTrackWatch()
+        initVolumeWatch()
         startPositionHeartbeat()
 
         try {
@@ -612,6 +625,8 @@ function createPlayerFrame(ctx, closeOverlay) {
         lyricStoreUnsub = null
         if (stopTrackWatch) stopTrackWatch()
         stopTrackWatch = null
+        if (stopVolumeWatch) stopVolumeWatch()
+        stopVolumeWatch = null
         if (spectrumDispose) spectrumDispose()
         spectrumDispose = null
       })
