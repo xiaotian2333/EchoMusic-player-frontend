@@ -134,8 +134,6 @@ var PLAYLIST_DETAIL_BATCH_SIZE = 48;
 var smoothWheelScrollBound = false;
 // 封面处理和 AI 深度估计都是异步的，coverProcessToken 用来丢弃已经过期的图片加载或模型结果。
 var coverProcessToken = 0, aiDepthPipeline = null, aiDepthReady = false, aiDepthBusy = false, aiDepthFailUntil = 0;
-// 封面深度纹理缓存和 LRU 键队列，缓存项里保存 canvas、AI 标记和访问时间。
-var coverDepthCache = Object.create(null), coverDepthCacheKeys = [];
 // AI 深度最近运行时间和最小间隔，防止频繁切歌时连续触发模型推理。
 var aiDepthLastRunAt = 0, aiDepthMinGapMs = 18000;
 // 从本地存储读取音量，读取失败或值非法时使用最大音量。
@@ -737,30 +735,7 @@ function collectProtectedBeatMapKeys() {
   } catch (e) {}
   return keep;
 }
-// 收集当前封面深度纹理缓存 key，保护正在使用的深度 canvas。
-function collectProtectedCoverDepthIds() {
-  var keep = Object.create(null);
-  try {
-    // coverDepthCacheId 可能在更后面的模块定义，启动早期不存在时返回空保护表。
-    if (typeof coverDepthCacheId !== 'function') return keep;
-    // 候选来源包含当前封面源和当前歌曲的常用封面尺寸。
-    var candidates = [];
-    if (typeof currentCoverSource !== 'undefined' && currentCoverSource && currentCoverSource.src) candidates.push(currentCoverSource.src);
-    var song = (typeof currentCoverSong === 'function') ? currentCoverSong() : null;
-    if (song && typeof songCoverSrc === 'function') {
-      candidates.push(songCoverSrc(song, 360));
-      candidates.push(songCoverSrc(song, 400));
-    }
-    var texImg = (typeof coverTex !== 'undefined' && coverTex && coverTex.image) ? coverTex.image : null;
-    // 缓存 key 包含纹理尺寸，因此保护时也要带上当前纹理宽高。
-    var w = texImg && texImg.width ? texImg.width : 0;
-    var h = texImg && texImg.height ? texImg.height : 0;
-    candidates.forEach(function(src){
-      if (src) markProtectedKey(keep, coverDepthCacheId(src + '|tex=' + w + 'x' + h));
-    });
-  } catch (e) {}
-  return keep;
-}
+// 收藏封面深度已迁移到 IndexedDB，无需内存保护裁剪。
 // 通用对象缓存裁剪：保留 keep 个未保护项，返回实际删除数量。
 function trimObjectCache(cache, keep, protectedKeys, skipRecord) {
   // 空缓存或数量未超过上限时无需裁剪。
@@ -782,33 +757,6 @@ function trimObjectCache(cache, keep, protectedKeys, skipRecord) {
   }
   return dropped;
 }
-// 按 LRU 队列裁剪封面深度缓存，优先保留最近访问和受保护的项。
-function trimCoverDepthCache(keep, protectedKeys) {
-  if (!coverDepthCache || !coverDepthCacheKeys) return 0;
-  // 先清理已经不存在缓存项的脏 key。
-  var keys = coverDepthCacheKeys.filter(function(key){ return !!coverDepthCache[key]; });
-  if (keys.length <= keep) {
-    coverDepthCacheKeys = keys;
-    return 0;
-  }
-  var keepSet = Object.create(null);
-  var count = 0;
-  // 从队尾向前保留最近使用的 keep 个 key。
-  for (var i = keys.length - 1; i >= 0 && count < keep; i--) {
-    keepSet[keys[i]] = true;
-    count++;
-  }
-  Object.keys(protectedKeys || {}).forEach(function(key){ keepSet[key] = true; });
-  var dropped = 0;
-  // 不在保留集合里的缓存项全部删除。
-  keys.forEach(function(key){
-    if (keepSet[key]) return;
-    delete coverDepthCache[key];
-    dropped++;
-  });
-  coverDepthCacheKeys = keys.filter(function(key){ return !!coverDepthCache[key]; });
-  return dropped;
-}
 // 收集当前运行时性能快照，供 window.__mineradioPerfSnapshot 调试调用。
 function collectRuntimePerfSnapshot(now) {
   // now 可由调用方传入，避免同一帧内重复读取 performance.now。
@@ -816,7 +764,6 @@ function collectRuntimePerfSnapshot(now) {
   // 统计各类缓存数量，便于观察裁剪是否生效。
   runtimePerfState.cacheCounts = {
     playlistCovers: safeObjectKeys(playlistCoverCache).length,
-    coverDepth: coverDepthCacheKeys ? coverDepthCacheKeys.length : 0,
     beatMaps: safeObjectKeys(beatMapCache).length,
     djBeatMaps: safeObjectKeys(djBeatMapCache).length
   };
@@ -869,8 +816,6 @@ function trimRuntimeCaches(reason, aggressive) {
   dropped += trimObjectCache(playlistCoverCache, aggressive ? 72 : 180, protectedCovers, function(rec){
     return rec && rec.loading;
   });
-  // 深度 canvas 占内存较多，后台保留更少。
-  dropped += trimCoverDepthCache(aggressive ? 4 : 10, collectProtectedCoverDepthIds());
   // 普通 beatMap 和 DJ beatMap 分别裁剪，避免大量歌曲切换后积累。
   dropped += trimObjectCache(beatMapCache, aggressive ? 12 : 36, protectedBeats);
   dropped += trimObjectCache(djBeatMapCache, aggressive ? 4 : 12, protectedBeats);
@@ -5645,6 +5590,7 @@ function readSavedLyricLayout() {
       cinema: raw.cinema !== false,
       bloom: raw.bloom === true,
       edge: raw.edge === true,
+      aiDepth: !!raw.aiDepth,
       visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(raw.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(raw.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -5722,6 +5668,7 @@ function saveLyricLayout() {
       cinema: !!fx.cinema,
       bloom: !!fx.bloom,
       edge: !!fx.edge,
+      aiDepth: !!fx.aiDepth,
       visualTintMode: fx.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(fx.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -6151,6 +6098,54 @@ async function getCustomBackgroundBlob(id) {
     req.onerror = function(){ reject(req.error || new Error('indexedDB get failed')); };
     tx.oncomplete = function(){ db.close(); };
   });
+}
+// 封面深度缓存 IndexedDB 配置。
+var DEPTH_DB_NAME = 'echo-player-depths';
+var DEPTH_STORE = 'depths';
+// 打开深度缓存 IndexedDB。
+function openDepthDB() {
+  return new Promise(function(resolve, reject){
+    if (!window.indexedDB) { reject(new Error('indexedDB unavailable')); return; }
+    var req = indexedDB.open(DEPTH_DB_NAME, 1);
+    req.onupgradeneeded = function(){
+      var db = req.result;
+      if (!db.objectStoreNames.contains(DEPTH_STORE)) db.createObjectStore(DEPTH_STORE, { keyPath: 'hash' });
+    };
+    req.onsuccess = function(){ resolve(req.result); };
+    req.onerror = function(){ reject(req.error || new Error('indexedDB open failed')); };
+  });
+}
+// 从 IndexedDB 读取指定 hash 的深度缓存。
+async function getDepthFromIDB(hash) {
+  if (!hash) return null;
+  try {
+    var db = await openDepthDB();
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction(DEPTH_STORE, 'readonly');
+      var req = tx.objectStore(DEPTH_STORE).get(hash);
+      req.onsuccess = function(){ resolve(req.result || null); };
+      req.onerror = function(){ reject(req.error); };
+      tx.oncomplete = function(){ db.close(); };
+    });
+  } catch (e) {
+    console.warn('[深度缓存] IDB 读取失败', e);
+    return null;
+  }
+}
+// 将深度缓存写入 IndexedDB（所有写入均为 AI 深度，标记 ai: true）。
+async function putDepthToIDB(hash, dataUrl, width, height) {
+  if (!hash || !dataUrl) return;
+  try {
+    var db = await openDepthDB();
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction(DEPTH_STORE, 'readwrite');
+      tx.objectStore(DEPTH_STORE).put({ hash: hash, dataUrl: dataUrl, width: width, height: height, ai: true, timestamp: Date.now() });
+      tx.oncomplete = function(){ db.close(); resolve(); };
+      tx.onerror = function(){ db.close(); reject(tx.error); };
+    });
+  } catch (e) {
+    console.warn('[深度缓存] IDB 写入失败', e);
+  }
 }
 // 颜色实验室弹层的运行状态。
 var colorLabState = { picker: null, id: '', h: 0, s: 1, v: 1, dragging: false };
@@ -7987,42 +7982,17 @@ function updateRipples(dt) {
 //   生成 256×256 RGBA 纹理: R=depth G=edge B=fg-mask A=lum
 // ============================================================
 function coverDepthCacheId(raw) {
-  // 用轻量哈希代替完整封面地址作为缓存键，避免长 dataUrl 或带参数 URL 反复占用对象键空间。
-  var str = String(raw || '');
-  if (!str) return '';
-  // FNV 风格哈希初始值。
-  var h = 2166136261;
-  for (var i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
-  }
-  return str.length + ':' + (h >>> 0).toString(36);
-}
-function getCoverDepthCache(raw) {
-  // 读取缓存时同步更新 LRU 顺序，后续 setCoverDepthCache 会按队列尾部保留最近使用项。
-  var id = coverDepthCacheId(raw);
-  if (!id || !coverDepthCache[id]) return null;
-  coverDepthCache[id].at = Date.now();
-  var idx = coverDepthCacheKeys.indexOf(id);
-  if (idx >= 0) {
-    coverDepthCacheKeys.splice(idx, 1);
-    coverDepthCacheKeys.push(id);
-  } else coverDepthCacheKeys.push(id);
-  return coverDepthCache[id];
-}
-function setCoverDepthCache(raw, canvas, aiEnhanced) {
-  // 深度纹理缓存只保留最近 18 项，防止连续切歌时 canvas 和纹理数据长期滞留内存。
-  var id = coverDepthCacheId(raw);
-  if (!id || !canvas) return;
-  var idx = coverDepthCacheKeys.indexOf(id);
-  if (idx >= 0) coverDepthCacheKeys.splice(idx, 1);
-  coverDepthCacheKeys.push(id);
-  coverDepthCache[id] = { canvas: canvas, ai: !!aiEnhanced, at: Date.now() };
-  while (coverDepthCacheKeys.length > 18) {
-    // 移除最旧的缓存项。
-    var drop = coverDepthCacheKeys.shift();
-    delete coverDepthCache[drop];
-  }
+  // 从封面 URL 或缓存键中提取文件名（不含后缀）作为 hash。
+  var str = String(raw || '')
+  if (!str) return ''
+  // 去掉 |tex=NxN 尺寸后缀
+  var pure = str.split('|')[0]
+  // 取最后一段作为文件名
+  var name = pure.split('/').pop()
+  if (!name) return ''
+  // 去掉扩展名
+  var dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
 }
 
 function buildEdgeAndDepth(srcCanvas) {
@@ -8130,7 +8100,7 @@ async function ensureAIDepthPipeline() {
     // 首次加载会下载模型，UI 上显示短提示。
     showAIDepthChip('加载 AI 深度模型 (首次需下载 50MB)…');
     // 从 CDN 动态导入 transformers.js。
-    var mod = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+    var mod = await import('./vendor/transformers.min.js');
     // 禁用本地模型查找，直接走远端资源。
     mod.env.allowLocalModels = false;
     // 限制 wasm 线程，降低播放器内嵌环境压力。
@@ -8278,7 +8248,12 @@ function queueAIDepthForCover(srcCanvas, edgeCanvas, token, opts, cacheSeed, for
     coverEdgeTex.needsUpdate = true;
     // 更新深度状态和缓存。
     setCoverDepthState(1, 1.0, 360);
-    setCoverDepthCache(cacheSeed, edgeCanvas, true);
+    (async function(){
+      var hash = coverDepthCacheId(cacheSeed);
+      var dataUrl = edgeCanvas.toDataURL();
+      console.log('[深度缓存] 写入 AI 深度:', { hash: hash, id: cacheSeed, width: edgeCanvas.width, height: edgeCanvas.height, dataUrl: dataUrl, timestamp: Date.now() });
+      await putDepthToIDB(hash, dataUrl, edgeCanvas.width, edgeCanvas.height);
+    })();
     showToast('AI 深度已后台增强');
   }, force ? 240 : 1800, force ? 1200 : 3000);
 }
@@ -8584,117 +8559,86 @@ function updateControlTrackInfo(song) {
 // 把已经解码并缩放好的封面 canvas 应用到主粒子材质、UI 缩略图和相关缓存。
 function applyCoverCanvas(cv, thumbSrc, opts) {
   opts = opts || {};
-  // canvas 无效或任务已过期时直接丢弃，避免旧封面覆盖新曲。
   if (!cv || !coverApplyStillCurrent(opts)) return;
-  // 每次正式应用封面都会递增处理 token，后续异步重活用它防串。
   var token = ++coverProcessToken;
-  // 记录当前封面来源，供分辨率切换或重建时复用。
   if (opts.coverSource && opts.coverSourceKind) {
     currentCoverSource = { kind: opts.coverSourceKind, src: opts.coverSource };
   }
-  // 深度缓存键包含封面标识和实际纹理尺寸，避免同图不同尺寸混用。
   var cacheSeed = (opts.coverKey || thumbSrc || '') + '|tex=' + (cv.width || 0) + 'x' + (cv.height || 0);
-  // 尝试读取已生成的边缘/深度缓存。
-  var cachedDepth = getCoverDepthCache(cacheSeed);
-  // 切歌颜色渐变: 把当前 coverTex 当作 prevCoverTex
+
   if (uniforms.uHasCover.value > 0.5 && coverTex.image) {
-    // 读取上一张封面尺寸。
     var prevW = coverTex.image.width || 256;
     var prevH = coverTex.image.height || 256;
-    // 上一张封面只保留较小副本，用于颜色混合过渡，控制显存和绘制成本。
     var prevScale = Math.min(1, 256 / Math.max(prevW, prevH, 1));
-    // 承载上一张封面缩略副本的 canvas。
     var prevCv = document.createElement('canvas');
     prevCv.width = Math.max(1, Math.round(prevW * prevScale));
     prevCv.height = Math.max(1, Math.round(prevH * prevScale));
     try {
-      // 将当前纹理图像拷贝成上一帧纹理，shader 可在新旧封面间混合。
       prevCv.getContext('2d').drawImage(coverTex.image, 0, 0, prevCv.width, prevCv.height);
       prevCoverTex.image = prevCv;
       prevCoverTex.needsUpdate = true;
     } catch (e) {}
   }
-  // 将新封面 canvas 写入 Three.js 纹理。
   coverTex.image = cv; coverTex.needsUpdate = true;
-  // 保存取色用 canvas，供颜色面板和歌词色板读取。
   coverPickerCanvas = cv;
-  // 标记 shader 当前已有封面可用。
   uniforms.uHasCover.value = 1;
-  if (cachedDepth && cachedDepth.canvas) {
-    // 命中深度缓存时立即写入边缘/深度纹理。
-    coverEdgeTex.image = cachedDepth.canvas;
-    coverEdgeTex.needsUpdate = true;
-    // AI 缓存深度使用更强增强值，启发式深度使用较弱增强值。
-    setCoverDepthState(1, cachedDepth.ai ? 1.0 : 0.55, opts.deferHeavy ? 180 : 120);
-  } else {
-    // 未命中缓存时先关闭或弱化深度，等待后续重活生成。
-    setCoverDepthState(opts.deferHeavy ? (uniforms.uHasDepth.value > 0.5 ? 0.22 : 0) : 0, opts.deferHeavy ? 0.20 : 0, opts.deferHeavy ? 120 : 1);
-  }
+  // 初始状态设为平面，等待异步深度缓存或启发式生成
+  setCoverDepthState(0, 0, opts.deferHeavy ? 120 : 1);
 
   if (thumbSrc) {
-    // 更新页面缩略封面图。
     document.getElementById('thumb-cover').src = thumbSrc;
-    // 同步控制条封面。
     setControlCoverSrc(thumbSrc);
   }
-  // 歌单架可能使用封面作为卡片纹理，通知其刷新。
   if (shelfManager) shelfManager.onCoverChange(thumbSrc);
 
-  // 启动颜色渐变 (1.4 秒)
-  // 默认预设使用更短的混合时长，其他预设保留更明显的封面色彩过渡。
   var colorMixMs = opts.colorMixDuration || (fx.preset === 0 ? 520 : 1400);
   startColorMixTween(opts.fromResolutionChange ? (fx.preset === 0 ? 300 : 520) : colorMixMs);
 
-  // 刷新所有依赖封面取色的视觉元素。
   function refreshCoverDependentColors() {
-    // 任务过期时停止，防止旧封面颜色写回当前画面。
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
-    // 浮空粒子颜色跟随封面。
     if (floatGroup) refreshFloatColorsFromCover(cv);
-    // 背面封面粒子颜色跟随封面。
     if (backCoverGroup) refreshBackCoverColorsFromCanvas(cv);
-    // 舞台歌词色板从新封面重新提取。
     updateLyricPaletteFromCover(cv);
   }
 
-  // 执行边缘/深度生成等较重的封面后处理。
   function runHeavyCoverWork() {
-    // 异步调度后再次防串。
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
-    // 延迟重活期间如果用户仍在交互，则继续让出主线程，优先保证操作流畅。
     if (opts.deferHeavy && typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) {
-      scheduleVisualApply(runHeavyCoverWork, 420, heavyTimeout || 1800);
+      scheduleVisualApply(runHeavyCoverWork, 420, 1800);
       return;
     }
-    // 根据封面生成启发式边缘和深度贴图。
     var edgeCv = buildEdgeAndDepth(cv);
-    // 生成结束后再防串一次，避免慢任务结果覆盖新封面。
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
-    // 写入深度缓存，标记为非 AI 深度。
-    setCoverDepthCache(cacheSeed, edgeCv, false);
-    // 更新 shader 使用的边缘/深度纹理。
     coverEdgeTex.image = edgeCv; coverEdgeTex.needsUpdate = true;
-    // 平滑开启深度效果。
-    setCoverDepthState(1, 0.55, opts.deferHeavy ? 260 : 180);
-    // 深度生成完成后同步刷新封面取色相关元素。
     refreshCoverDependentColors();
-
-    // 在启发式深度可用后排队 AI 深度增强，成功后会再次替换深度纹理。
     queueAIDepthForCover(cv, edgeCv, token, opts, cacheSeed, false);
   }
-  if (cachedDepth && cachedDepth.canvas) {
-    // 缓存命中时仍延迟刷新取色，避免当前切歌链路阻塞首帧。
-    scheduleVisualApply(refreshCoverDependentColors, opts.deferHeavy ? 260 : 90, opts.deferHeavy ? 1200 : 700);
-    // 如果缓存不是 AI 结果，则继续尝试排队 AI 深度升级。
-    if (!cachedDepth.ai) queueAIDepthForCover(cv, cachedDepth.canvas, token, opts, cacheSeed, false);
-    return;
-  }
-  // 根据是否延迟重活选择边缘/深度生成的排队延迟。
-  var heavyDelay = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120);
-  // 重活调度的兜底超时，避免长时间没有空闲帧导致永远不执行。
-  var heavyTimeout = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900);
-  // 将边缘/深度生成放到视觉调度器中执行。
-  scheduleVisualApply(runHeavyCoverWork, heavyDelay, heavyTimeout);
+
+  // 从 IndexedDB 异步加载深度缓存
+  (async function(){
+    var hash = coverDepthCacheId(cacheSeed)
+    var cachedDepth = await getDepthFromIDB(hash)
+    if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return
+    if (cachedDepth && cachedDepth.dataUrl && cachedDepth.width && cachedDepth.height) {
+      var img = new Image()
+      img.src = cachedDepth.dataUrl
+      await new Promise(function(resolve){ img.onload = resolve; img.onerror = resolve })
+      if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return
+      var edgeCv = document.createElement('canvas')
+      edgeCv.width = cachedDepth.width
+      edgeCv.height = cachedDepth.height
+      edgeCv.getContext('2d').drawImage(img, 0, 0)
+      coverEdgeTex.image = edgeCv
+      coverEdgeTex.needsUpdate = true
+      // 所有 IDB 条目均为 AI 深度，直接激活立体效果
+      setCoverDepthState(1, 1.0, opts.deferHeavy ? 180 : 120)
+      scheduleVisualApply(refreshCoverDependentColors, opts.deferHeavy ? 260 : 90, opts.deferHeavy ? 1200 : 700)
+      return
+    }
+    var heavyDelay = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120)
+    var heavyTimeout = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900)
+    scheduleVisualApply(runHeavyCoverWork, heavyDelay, heavyTimeout)
+  })().catch(function(e){ console.warn('[深度缓存] 异步加载失败', e) })
 }
 
 // ============================================================
@@ -16342,7 +16286,6 @@ window.addEventListener('mousemove', function(e){
   var pp = document.getElementById('playlist-panel');
   // 指针坐标和视口尺寸。
   var ex = e.clientX, ey = e.clientY, W = innerWidth, H = innerHeight;
-  updateUserCapsuleAutoHideFromPointer(ex, ey);
   if (immersiveMode) {
     // 沉浸模式下只保留必要面板和焦点交互。
     updateShelfHoverCueFromPointer(e);
