@@ -2580,6 +2580,40 @@ body.controls-visible #fx-fab {
   background: rgba(0,245,212,.10);
   color: var(--fc-accent);
 }
+.ai-depth-cloud-config {
+  display: none;
+  grid-template-columns: 72px minmax(0,1fr);
+  align-items: center;
+  gap: 9px;
+  margin: -2px 0 10px;
+  padding: 8px 9px;
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,.065);
+  background: rgba(255,255,255,.026);
+}
+.ai-depth-cloud-config.show {
+  display: grid;
+}
+.ai-depth-cloud-config label {
+  font-size: 11px;
+  color: rgba(255,255,255,.56);
+  white-space: nowrap;
+}
+.ai-depth-cloud-config input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color: rgba(255,255,255,.86);
+  font: 11px/1.2 "JetBrains Mono", "Noto Sans SC", sans-serif;
+  outline: none;
+}
+.ai-depth-cloud-config input:focus {
+  border-color: rgba(0,245,212,.34);
+  box-shadow: 0 0 0 2px rgba(0,245,212,.08);
+}
 /* --- 高级折叠 --- */
 .fx-advanced {
   margin-top: 16px;

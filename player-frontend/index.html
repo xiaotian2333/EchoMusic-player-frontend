@@ -159,8 +159,17 @@
         <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-aidepth" onclick="toggleFx('aiDepth')"><span>AI 立体增强</span><span class="dot"></span></div>
         <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
+      </div>
+      <div class="fx-section-label">AI 立体增强</div>
+      <div class="fx-seg" id="ai-depth-mode-seg">
+        <button data-ai-depth-mode="off" class="active">关闭</button>
+        <button data-ai-depth-mode="local">本地</button>
+        <button data-ai-depth-mode="cloud">云端</button>
+      </div>
+      <div class="ai-depth-cloud-config" id="ai-depth-cloud-config">
+        <label for="ai-depth-cloud-api">云端 API</label>
+        <input id="ai-depth-cloud-api" type="text" placeholder="http://localhost:7860" autocomplete="off" spellcheck="false">
       </div>
       <div class="fx-section-label">壁纸</div>
       <div class="fx-slider dev-locked"><label>壁纸透明度</label><input id="fx-wallpaperopacity" type="range" min="0.35" max="1" step="0.01" disabled><output></output></div>

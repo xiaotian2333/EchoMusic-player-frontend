@@ -535,6 +535,7 @@ function createPlayerFrame(ctx, closeOverlay) {
               type: 'echo-player-frontend:init',
               payload: {
                 directEnter: true,
+                pluginVersion: String(ctx.manifest?.version || ''),
                 hostControls: buildHostControlsPayload(),
               },
             })

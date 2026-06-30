@@ -76,6 +76,12 @@ function normalizeVisualPresetIndex(value, fallback) {
 }
 // 系统级“减少动态效果”偏好，后续动画逻辑可以据此降低运动强度。
 var prefersReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+// 插件版本号由宿主桥接从 ctx.manifest.version 动态下发，用于云端深度服务识别客户端。
+var playerFrontendVersion = '';
+// 生成云端深度服务请求使用的 UA。
+function cloudDepthUserAgent() {
+  return 'EchoMusic-player-frontend/' + (playerFrontendVersion || 'unknown');
+}
 // 启动阶段性能打点列表，保留最近若干关键时间点供调试。
 var appPerfMarks = [];
 // 记录启动或关键流程的性能时间点，同时写入 Performance Timeline。
@@ -133,7 +139,7 @@ var PLAYLIST_DETAIL_BATCH_SIZE = 48;
 // 平滑滚轮处理器是否已经绑定，防止重复监听。
 var smoothWheelScrollBound = false;
 // 封面处理和 AI 深度估计都是异步的，coverProcessToken 用来丢弃已经过期的图片加载或模型结果。
-var coverProcessToken = 0, aiDepthPipeline = null, aiDepthReady = false, aiDepthBusy = false, aiDepthFailUntil = 0;
+var coverProcessToken = 0, currentCoverDepthCacheSeed = '', aiDepthPipeline = null, aiDepthReady = false, aiDepthBusy = false, aiDepthFailUntil = 0;
 // AI 深度最近运行时间和最小间隔，防止频繁切歌时连续触发模型推理。
 var aiDepthLastRunAt = 0, aiDepthMinGapMs = 18000;
 // 从本地存储读取音量，读取失败或值非法时使用最大音量。
@@ -411,8 +417,12 @@ var fxDefaults = {
   wallpaperMode: false,
   // 壁纸模式透明度，保留给旧配置兼容。
   wallpaperOpacity: 1,
-  // 各类视觉特效开关：浮空粒子、电影镜头、边缘、AI 深度、泛光和歌词辉光。
-  floatLayer: false, cinema: true, edge: false, aiDepth: false, bloom: false, lyricGlow: true,
+  // 各类视觉特效开关：浮空粒子、电影镜头、边缘、泛光和歌词辉光。
+  floatLayer: false, cinema: true, edge: false, bloom: false, lyricGlow: true,
+  // AI 立体增强模式：off 关闭，local 使用本地模型，cloud 请求云端深度服务。
+  aiDepthMode: 'off',
+  // 云端深度服务基础地址，留空时不发起云端请求。
+  aiDepthCloudApi: '',
   // 歌词辉光是否随节拍增强。
   lyricGlowBeat: true,
   // 是否启用歌词周围的辉光粒子。
@@ -507,7 +517,8 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   floatLayer: false,
   cinema: true,
   edge: false,
-  aiDepth: false,
+  aiDepthMode: 'off',
+  aiDepthCloudApi: '',
   bloom: false,
   lyricGlow: true,
   lyricGlowBeat: true,
@@ -5500,6 +5511,32 @@ function normalizePerformanceQuality(v) {
   var value = String(v || '');
   return /^(eco|balanced|high|ultra)$/.test(value) ? value : fxDefaults.performanceQuality;
 }
+// 归一化 AI 立体增强模式。
+function normalizeAIDepthMode(value) {
+  // 旧 aiDepth 字段不再兼容，只有显式新字段会生效。
+  value = String(value || '');
+  return /^(off|local|cloud)$/.test(value) ? value : fxDefaults.aiDepthMode;
+}
+// 归一化云端深度服务基础地址。
+function normalizeAIDepthCloudApi(value) {
+  // 地址留空表示不请求云端；非 http(s) 地址直接视为空。
+  var url = String(value || '').trim();
+  if (!url) return '';
+  if (!/^https?:\/\//i.test(url)) return '';
+  return url.replace(/\/+$/, '');
+}
+// 判断当前是否启用任一种 AI 深度模式。
+function isAIDepthEnabled() {
+  return normalizeAIDepthMode(fx && fx.aiDepthMode) !== 'off';
+}
+// 判断当前是否使用本地 AI 深度模式。
+function isLocalAIDepthMode() {
+  return normalizeAIDepthMode(fx && fx.aiDepthMode) === 'local';
+}
+// 判断当前是否使用云端 AI 深度模式。
+function isCloudAIDepthMode() {
+  return normalizeAIDepthMode(fx && fx.aiDepthMode) === 'cloud';
+}
 // 根据分辨率档位计算封面粒子网格边长。
 function coverParticleGridForResolution(v) {
   // 基准网格 118，按档位缩放。
@@ -5590,7 +5627,8 @@ function readSavedLyricLayout() {
       cinema: raw.cinema !== false,
       bloom: raw.bloom === true,
       edge: raw.edge === true,
-      aiDepth: !!raw.aiDepth,
+      aiDepthMode: normalizeAIDepthMode(raw.aiDepthMode),
+      aiDepthCloudApi: normalizeAIDepthCloudApi(raw.aiDepthCloudApi),
       visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(raw.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(raw.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -5668,7 +5706,8 @@ function saveLyricLayout() {
       cinema: !!fx.cinema,
       bloom: !!fx.bloom,
       edge: !!fx.edge,
-      aiDepth: !!fx.aiDepth,
+      aiDepthMode: normalizeAIDepthMode(fx.aiDepthMode),
+      aiDepthCloudApi: normalizeAIDepthCloudApi(fx.aiDepthCloudApi),
       visualTintMode: fx.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(fx.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -8140,7 +8179,7 @@ function makeAIDepthInputCanvas(srcCanvas) {
 // 使用 AI 模型估计封面深度图。
 async function estimateAIDepth(srcCanvas, token) {
   // token 在模型加载前后都要校验，防止上一张封面的异步结果覆盖当前封面。
-  if (!fx.aiDepth) return null;
+  if (!isLocalAIDepthMode()) return null;
   // 近期失败后进入冷却，避免频繁重试。
   if (performance.now() < aiDepthFailUntil) return null;
   showAIDepthChip('后台增强封面深度…');
@@ -8173,6 +8212,68 @@ async function estimateAIDepth(srcCanvas, token) {
     hideAIDepthChip();
     return null;
   }
+}
+
+// 将深度图 dataUrl 解码为 canvas，供后续合并到辅助纹理。
+function depthDataUrlToCanvas(dataUrl) {
+  return new Promise(function(resolve){
+    if (!dataUrl) { resolve(null); return; }
+    var img = new Image();
+    img.onload = function(){
+      var w = img.naturalWidth || img.width || 0;
+      var h = img.naturalHeight || img.height || 0;
+      if (!w || !h) { resolve(null); return; }
+      var cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      try {
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(cv);
+      } catch (e) {
+        resolve(null);
+      }
+    };
+    img.onerror = function(){ resolve(null); };
+    img.src = dataUrl;
+  });
+}
+
+// 请求云端深度服务，hash 固定使用本地 IndexedDB 深度缓存同一个 key。
+async function fetchCloudAIDepth(hash, token) {
+  if (!isCloudAIDepthMode()) return null;
+  hash = String(hash || '').trim();
+  if (!hash) return null;
+  var api = normalizeAIDepthCloudApi(fx.aiDepthCloudApi);
+  if (!api) return null;
+  showAIDepthChip('请求云端封面深度…');
+  try {
+    var resp = await fetch(api + '/depth/' + encodeURIComponent(hash), {
+      headers: { 'User-Agent': cloudDepthUserAgent() }
+    });
+    if (token !== coverProcessToken) { hideAIDepthChip(); return null; }
+    var body = null;
+    try { body = await resp.json(); } catch (e) {}
+    if (!resp.ok) {
+      throw new Error((body && body.error) || ('HTTP ' + resp.status));
+    }
+    if (!body || !body.dataUrl) throw new Error('云端响应缺少 dataUrl');
+    var cv = await depthDataUrlToCanvas(body.dataUrl);
+    hideAIDepthChip();
+    return cv;
+  } catch (e) {
+    console.warn('Cloud AI depth failed:', e);
+    aiDepthFailUntil = performance.now() + 45000;
+    hideAIDepthChip();
+    return null;
+  }
+}
+
+// 按当前模式获取 AI 深度图，云端 hash 与本地数据库 hash 保持一致。
+async function estimateAIDepthByMode(srcCanvas, token, cacheSeed) {
+  var mode = normalizeAIDepthMode(fx.aiDepthMode);
+  if (mode === 'local') return estimateAIDepth(srcCanvas, token);
+  if (mode === 'cloud') return fetchCloudAIDepth(coverDepthCacheId(cacheSeed), token);
+  return null;
 }
 
 function mergeAIDepthIntoEdgeTexture(heuristicCanvas, aiCanvas) {
@@ -8225,23 +8326,26 @@ function mergeAIDepthIntoEdgeTexture(heuristicCanvas, aiCanvas) {
 function queueAIDepthForCover(srcCanvas, edgeCanvas, token, opts, cacheSeed, force) {
   // AI 增强排到空闲时段执行，并在每个等待点检查 token 和封面来源，避免后台任务抢占交互帧。
   opts = opts || {};
+  var mode = normalizeAIDepthMode(fx.aiDepthMode);
   // 缺少开关或输入时不排队。
-  if (!fx.aiDepth || !srcCanvas || !edgeCanvas) return;
+  if (mode === 'off' || !srcCanvas || !edgeCanvas) return;
+  // 云端模式必须配置基础地址，并且 hash 固定来自当前本地深度缓存 key。
+  if (mode === 'cloud' && (!normalizeAIDepthCloudApi(fx.aiDepthCloudApi) || !coverDepthCacheId(cacheSeed))) return;
   // 后台优化释放资源时不启动非强制 AI 任务。
   if (!force && isHiddenForBackgroundOptimization()) return;
   // 模型失败冷却或忙碌中直接跳过。
-  if (performance.now() < aiDepthFailUntil || aiDepthBusy) return;
+  if (performance.now() < aiDepthFailUntil || (mode === 'local' && aiDepthBusy)) return;
   // 限制非强制 AI 深度任务频率。
   var now = performance.now();
   if (!force && now - aiDepthLastRunAt < aiDepthMinGapMs) return;
   aiDepthLastRunAt = now;
   scheduleVisualApply(async function(){
     // 所有异步阶段都校验 token 和封面来源。
-    if (!fx.aiDepth || token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
+    if (normalizeAIDepthMode(fx.aiDepthMode) !== mode || token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
     await yieldToIdle(force ? 900 : 2600);
-    if (!fx.aiDepth || token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
+    if (normalizeAIDepthMode(fx.aiDepthMode) !== mode || token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
     // 推理成功后合并到当前 edgeCanvas。
-    var aiCanvas = await estimateAIDepth(srcCanvas, token);
+    var aiCanvas = await estimateAIDepthByMode(srcCanvas, token, cacheSeed);
     if (!aiCanvas || token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
     mergeAIDepthIntoEdgeTexture(edgeCanvas, aiCanvas);
     coverEdgeTex.image = edgeCanvas;
@@ -8254,7 +8358,7 @@ function queueAIDepthForCover(srcCanvas, edgeCanvas, token, opts, cacheSeed, for
       console.log('[深度缓存] 写入 AI 深度:', { hash: hash, id: cacheSeed, width: edgeCanvas.width, height: edgeCanvas.height, dataUrl: dataUrl, timestamp: Date.now() });
       await putDepthToIDB(hash, dataUrl, edgeCanvas.width, edgeCanvas.height);
     })();
-    showToast('AI 深度已后台增强');
+    showToast(mode === 'cloud' ? '云端深度已后台增强' : 'AI 深度已后台增强');
   }, force ? 240 : 1800, force ? 1200 : 3000);
 }
 
@@ -8262,8 +8366,8 @@ function queueAIDepthForCover(srcCanvas, edgeCanvas, token, opts, cacheSeed, for
 function queueAIDepthForCurrentCover(force) {
   // 当前封面或深度纹理不可用时跳过。
   if (!coverTex || !coverTex.image || !coverEdgeTex || !coverEdgeTex.image) return;
-  if (!uniforms.uHasCover.value || !uniforms.uHasDepth.value) return;
-  queueAIDepthForCover(coverTex.image, coverEdgeTex.image, coverProcessToken, {}, '', !!force);
+  if (!uniforms.uHasCover.value) return;
+  queueAIDepthForCover(coverTex.image, coverEdgeTex.image, coverProcessToken, {}, currentCoverDepthCacheSeed, !!force);
 }
 
 // 颜色渐变 tween (切歌时旧封面→新封面)
@@ -8565,6 +8669,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     currentCoverSource = { kind: opts.coverSourceKind, src: opts.coverSource };
   }
   var cacheSeed = (opts.coverKey || thumbSrc || '') + '|tex=' + (cv.width || 0) + 'x' + (cv.height || 0);
+  currentCoverDepthCacheSeed = cacheSeed;
 
   if (uniforms.uHasCover.value > 0.5 && coverTex.image) {
     var prevW = coverTex.image.width || 256;
@@ -8614,31 +8719,50 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     queueAIDepthForCover(cv, edgeCv, token, opts, cacheSeed, false);
   }
 
-  // 从 IndexedDB 异步加载深度缓存
-  (async function(){
-    var hash = coverDepthCacheId(cacheSeed)
-    var cachedDepth = await getDepthFromIDB(hash)
-    if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return
-    if (cachedDepth && cachedDepth.dataUrl && cachedDepth.width && cachedDepth.height) {
-      var img = new Image()
-      img.src = cachedDepth.dataUrl
-      await new Promise(function(resolve){ img.onload = resolve; img.onerror = resolve })
+  // 从 IndexedDB 异步加载深度缓存；关闭模式不读取 AI 深度缓存。
+  if (isAIDepthEnabled()) {
+    var depthCacheMode = normalizeAIDepthMode(fx.aiDepthMode);
+    (async function(){
+      var hash = coverDepthCacheId(cacheSeed)
+      var cachedDepth = await getDepthFromIDB(hash)
+      if (normalizeAIDepthMode(fx.aiDepthMode) !== depthCacheMode) {
+        var fallbackDelay = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120)
+        var fallbackTimeout = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900)
+        scheduleVisualApply(runHeavyCoverWork, fallbackDelay, fallbackTimeout)
+        return
+      }
       if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return
-      var edgeCv = document.createElement('canvas')
-      edgeCv.width = cachedDepth.width
-      edgeCv.height = cachedDepth.height
-      edgeCv.getContext('2d').drawImage(img, 0, 0)
-      coverEdgeTex.image = edgeCv
-      coverEdgeTex.needsUpdate = true
-      // 所有 IDB 条目均为 AI 深度，直接激活立体效果
-      setCoverDepthState(1, 1.0, opts.deferHeavy ? 180 : 120)
-      scheduleVisualApply(refreshCoverDependentColors, opts.deferHeavy ? 260 : 90, opts.deferHeavy ? 1200 : 700)
-      return
-    }
+      if (cachedDepth && cachedDepth.dataUrl && cachedDepth.width && cachedDepth.height) {
+        var img = new Image()
+        img.src = cachedDepth.dataUrl
+        await new Promise(function(resolve){ img.onload = resolve; img.onerror = resolve })
+        if (normalizeAIDepthMode(fx.aiDepthMode) !== depthCacheMode) {
+          var fallbackDelay2 = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120)
+          var fallbackTimeout2 = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900)
+          scheduleVisualApply(runHeavyCoverWork, fallbackDelay2, fallbackTimeout2)
+          return
+        }
+        if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return
+        var edgeCv = document.createElement('canvas')
+        edgeCv.width = cachedDepth.width
+        edgeCv.height = cachedDepth.height
+        edgeCv.getContext('2d').drawImage(img, 0, 0)
+        coverEdgeTex.image = edgeCv
+        coverEdgeTex.needsUpdate = true
+        // 所有 IDB 条目均为 AI 深度，直接激活立体效果。
+        setCoverDepthState(1, 1.0, opts.deferHeavy ? 180 : 120)
+        scheduleVisualApply(refreshCoverDependentColors, opts.deferHeavy ? 260 : 90, opts.deferHeavy ? 1200 : 700)
+        return
+      }
+      var heavyDelay = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120)
+      var heavyTimeout = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900)
+      scheduleVisualApply(runHeavyCoverWork, heavyDelay, heavyTimeout)
+    })().catch(function(e){ console.warn('[深度缓存] 异步加载失败', e) })
+  } else {
     var heavyDelay = opts.deferHeavy ? (opts.delay || 620) : (opts.delay || 120)
     var heavyTimeout = opts.deferHeavy ? (opts.timeout || 1800) : (opts.timeout || 900)
     scheduleVisualApply(runHeavyCoverWork, heavyDelay, heavyTimeout)
-  })().catch(function(e){ console.warn('[深度缓存] 异步加载失败', e) })
+  }
 }
 
 // ============================================================
@@ -8829,6 +8953,7 @@ function loadCoverFromUrl(directUrl, opts) {
     if (!coverApplyStillCurrent(opts)) return;
     // 清除当前封面来源记录。
     currentCoverSource = null;
+    currentCoverDepthCacheSeed = '';
     // 递增封面处理 token，让旧异步任务失效。
     coverProcessToken++;
     // 关闭封面和深度状态。
@@ -8851,6 +8976,7 @@ function loadCoverFromUrl(directUrl, opts) {
   if (!proxiedUrl) {
     // 没有可用代理时关闭封面纹理，只保留背景图降级。
     uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
+    currentCoverDepthCacheSeed = '';
     resetFloatColorsToIdle();
     setControlCoverSrc('');
     return;
@@ -8890,6 +9016,7 @@ function loadCoverFromUrl(directUrl, opts) {
       // 两次加载都失败时，只清空可读封面纹理和相关 UI。
       if (!coverApplyStillCurrent(opts)) return;
       currentCoverSource = null;
+      currentCoverDepthCacheSeed = '';
       uniforms.uHasCover.value = 0; setCoverDepthState(0, 0, 1);
       resetFloatColorsToIdle();
       setControlCoverSrc('');
@@ -12929,7 +13056,8 @@ function normalizeFxArchiveSnapshot(raw) {
     floatLayer: !!raw.floatLayer,
     cinema: raw.cinema !== false,
     edge: !!raw.edge,
-    aiDepth: !!raw.aiDepth,
+    aiDepthMode: normalizeAIDepthMode(raw.aiDepthMode),
+    aiDepthCloudApi: normalizeAIDepthCloudApi(raw.aiDepthCloudApi),
     bloom: !!raw.bloom,
     lyricGlow: raw.lyricGlow !== false,
     lyricGlowBeat: raw.lyricGlowBeat !== false,
@@ -13052,7 +13180,7 @@ function applyFxArchiveSnapshot(snapshot) {
   if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer();
   setParticleLyricsSilently(fx.particleLyrics);
   if (fx.backCover) createBackCoverLayer(); else destroyBackCoverLayer();
-  if (fx.aiDepth) {
+  if (isAIDepthEnabled()) {
     aiDepthFailUntil = 0;
     queueAIDepthForCurrentCover(true);
   }
@@ -14415,9 +14543,7 @@ function updateFxInputs() {
   if (liveBackgroundKeepToggle) liveBackgroundKeepToggle.classList.toggle('on', fx.liveBackgroundKeep === true);
   updatePerformanceControls();
   updateDevelopmentFxControls();
-  // AI 深度开关。
-  var aiDepthToggle = document.getElementById('t-aidepth');
-  if (aiDepthToggle) aiDepthToggle.classList.toggle('on', fx.aiDepth);
+  updateAIDepthControls();
   // 三态
   // 歌单架模式分段按钮。
   document.querySelectorAll('#shelf-seg button').forEach(function(b){ b.classList.toggle('active', b.dataset.shelf === fx.shelf); });
@@ -14981,6 +15107,25 @@ function bindFxPanel() {
   document.querySelectorAll('#shelf-presence-seg [data-shelf-presence]').forEach(function(b){
     b.addEventListener('click', function(){ setShelfPresence(b.getAttribute('data-shelf-presence')); });
   });
+  // AI 立体增强模式按钮。
+  document.querySelectorAll('#ai-depth-mode-seg [data-ai-depth-mode]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      setAIDepthMode(btn.getAttribute('data-ai-depth-mode'));
+    });
+  });
+  // 云端深度服务地址。
+  var aiDepthCloudInput = document.getElementById('ai-depth-cloud-api');
+  if (aiDepthCloudInput) {
+    aiDepthCloudInput.addEventListener('change', function(){
+      setAIDepthCloudApi(aiDepthCloudInput.value);
+    });
+    aiDepthCloudInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setAIDepthCloudApi(aiDepthCloudInput.value);
+      }
+    });
+  }
   // 后台策略按钮。
   document.querySelectorAll('#performance-background-seg [data-performance-background]').forEach(function(btn){
     btn.addEventListener('click', function(){
@@ -15006,9 +15151,10 @@ function toggleFx(key) {
     showToast('开发中，暂不可用');
     return;
   }
+  if (!Object.prototype.hasOwnProperty.call(fxDefaults, key) || typeof fxDefaults[key] !== 'boolean') return;
   fx[key] = !fx[key];
   // 根据字段名映射到对应开关 DOM id。
-  var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
+  var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key);
   // 对应开关节点。
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
@@ -15039,14 +15185,6 @@ function toggleFx(key) {
   if (key === 'bloom') showToast(fx.bloom ? '溢光已开启' : '溢光已关闭');
   if (key === 'edge') showToast(fx.edge ? '已开启轮廓高亮' : '已关闭轮廓高亮');
   if (key === 'cinema') showToast(fx.cinema ? '已开启电影镜头' : '已关闭电影镜头');
-  if (key === 'aiDepth') {
-    if (fx.aiDepth) {
-      // 重新开启 AI 深度时清除失败冷却并尝试处理当前封面。
-      aiDepthFailUntil = 0;
-      queueAIDepthForCurrentCover(true);
-    }
-    showToast(fx.aiDepth ? '已开启后台 AI 立体增强' : '已关闭 AI 立体增强, 使用轻量弧面');
-  }
 }
 // 切换视觉控制台显示状态。
 function toggleFxPanel(force) {
@@ -15098,6 +15236,54 @@ function resetFx() {
   if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
   saveLyricLayout();
   showToast('已恢复默认参数');
+}
+
+// 刷新 AI 立体增强模式和云端配置 UI。
+function updateAIDepthControls() {
+  fx.aiDepthMode = normalizeAIDepthMode(fx.aiDepthMode);
+  fx.aiDepthCloudApi = normalizeAIDepthCloudApi(fx.aiDepthCloudApi);
+  document.querySelectorAll('#ai-depth-mode-seg [data-ai-depth-mode]').forEach(function(btn){
+    btn.classList.toggle('active', btn.getAttribute('data-ai-depth-mode') === fx.aiDepthMode);
+  });
+  var config = document.getElementById('ai-depth-cloud-config');
+  if (config) config.classList.toggle('show', fx.aiDepthMode === 'cloud');
+  var input = document.getElementById('ai-depth-cloud-api');
+  if (input && input.value !== fx.aiDepthCloudApi) input.value = fx.aiDepthCloudApi;
+}
+
+// 设置 AI 立体增强模式。
+function setAIDepthMode(mode) {
+  mode = normalizeAIDepthMode(mode);
+  fx.aiDepthMode = mode;
+  if (mode === 'off') {
+    // 关闭时禁用 AI 深度位移，避免已缓存深度继续影响当前封面。
+    setCoverDepthState(0, 0, 240);
+  } else {
+    aiDepthFailUntil = 0;
+    queueAIDepthForCurrentCover(true);
+  }
+  updateAIDepthControls();
+  saveLyricLayout();
+  if (mode === 'local') showToast('已开启本地 AI 立体增强');
+  else if (mode === 'cloud') showToast(fx.aiDepthCloudApi ? '已开启云端 AI 立体增强' : '请先配置云端 API 地址');
+  else showToast('已关闭 AI 立体增强');
+}
+
+// 保存云端深度服务地址。
+function setAIDepthCloudApi(value) {
+  var api = normalizeAIDepthCloudApi(value);
+  fx.aiDepthCloudApi = api;
+  updateAIDepthControls();
+  saveLyricLayout();
+  if (!api) {
+    showToast('云端 API 地址为空或无效');
+    return;
+  }
+  if (isCloudAIDepthMode()) {
+    aiDepthFailUntil = 0;
+    queueAIDepthForCurrentCover(true);
+  }
+  showToast('云端 API 已保存');
 }
 
 // 设置 3D 歌单架模式。
@@ -17688,8 +17874,10 @@ function startMainLoopSafely() {
     var data = event && event.data;
     if (!data || data.source !== BRIDGE_PARENT_SOURCE) return;
     if (data.type === 'echo-player-frontend:init') {
-      // 初始化消息包含宿主窗口控制能力。
-      bridgeHostControls = Object.assign(bridgeHostControls, (data.payload && data.payload.hostControls) || {});
+      // 初始化消息包含插件版本和宿主窗口控制能力。
+      var initPayload = data.payload || {};
+      playerFrontendVersion = String(initPayload.pluginVersion || '').trim();
+      bridgeHostControls = Object.assign(bridgeHostControls, initPayload.hostControls || {});
       forcePlayerSurface();
       refreshBridgeViewport('echo-bridge-init');
       installWindowControls();
