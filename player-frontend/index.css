@@ -2576,6 +2576,53 @@ body.controls-visible #fx-fab {
   border-color: rgba(0,245,212,.34);
   box-shadow: 0 0 0 2px rgba(0,245,212,.08);
 }
+.lyric-filter-config {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 7px 0 10px;
+  padding: 8px 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.026);
+}
+.lyric-filter-config.off {
+  background: rgba(255,255,255,.018);
+}
+.lyric-filter-toggle {
+  min-height: 36px;
+  padding: 8px 10px;
+}
+.lyric-filter-regex-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) 58px;
+  align-items: center;
+  gap: 8px;
+}
+.lyric-filter-regex-row label {
+  font-size: 11px;
+  color: rgba(255,255,255,.56);
+  white-space: nowrap;
+}
+.lyric-filter-regex-row input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color: rgba(255,255,255,.86);
+  font: 11px/1.2 "JetBrains Mono", "Noto Sans SC", sans-serif;
+  outline: none;
+}
+.lyric-filter-regex-row input:focus {
+  border-color: rgba(0,245,212,.34);
+  box-shadow: 0 0 0 2px rgba(0,245,212,.08);
+}
+.lyric-filter-regex-row .fx-mini-btn {
+  min-width: 0;
+  padding: 0 8px;
+}
 /* --- 高级折叠 --- */
 .fx-advanced {
   margin-top: 16px;

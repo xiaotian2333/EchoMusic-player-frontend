@@ -35,6 +35,8 @@
     "lyricLetterSpacing": 0,
     "lyricLineHeight": 1,
     "lyricWeight": 900,
+    "lyricFilterEnabled": true,
+    "lyricFilterRegex": "^([^：]*)：.*$|^([^:]*):.*$|^([^翻唱]*)翻唱.*$|^([^许可]*)许可.*$|^([^音乐人]*)音乐人.*$|^([^国风]*)国风.*$|^([^纯音乐]*)纯音乐.*$|^([^星曜计划]*)星曜计划.*$",
     "visualTintMode": "auto",
     "visualTintColor": "#9db8cf",
     "uiAccentColor": "#ffffff",

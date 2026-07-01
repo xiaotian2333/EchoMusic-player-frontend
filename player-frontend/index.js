@@ -343,6 +343,8 @@ function maybeAnnounceDjMode() {
 // 桥接模式下舞台歌词跟随主程序页面歌词字体。
 var BRIDGE_LYRIC_FONT_FAMILY_FALLBACK = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 var bridgeLyricFontFamily = BRIDGE_LYRIC_FONT_FAMILY_FALLBACK;
+// 默认歌词过滤正则，命中后在接收歌词时从时间轴中移除。
+var DEFAULT_LYRIC_FILTER_REGEX = '^([^：]*)：.*$|^([^:]*):.*$|^([^翻唱]*)翻唱.*$|^([^许可]*)许可.*$|^([^音乐人]*)音乐人.*$|^([^国风]*)国风.*$|^([^纯音乐]*)纯音乐.*$|^([^星曜计划]*)星曜计划.*$';
 
 // fx 状态: 预设 + 主滑块 + 开关 + 三态
 // 用户可调视觉参数的默认值。fx 会在此基础上叠加本地存档，并在控制台、shader 和布局逻辑之间共享。
@@ -393,6 +395,10 @@ var fxDefaults = {
   lyricLineHeight: 1.0,
   // 歌词字重。
   lyricWeight: 900,
+  // 是否启用歌词过滤。
+  lyricFilterEnabled: true,
+  // 歌词过滤正则。
+  lyricFilterRegex: DEFAULT_LYRIC_FILTER_REGEX,
   // 主视觉染色模式，auto 表示跟随封面色。
   visualTintMode: 'auto',
   // 手动主视觉染色。
@@ -506,6 +512,8 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   lyricLetterSpacing: 0,
   lyricLineHeight: 1,
   lyricWeight: 900,
+  lyricFilterEnabled: true,
+  lyricFilterRegex: DEFAULT_LYRIC_FILTER_REGEX,
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
@@ -5561,6 +5569,24 @@ function coverTextureSizeForResolution(v) {
   if (v >= 1.10) return 384;
   return 256;
 }
+// 归一化歌词过滤正则文本；空字符串表示启用开关下也不实际过滤。
+function normalizeLyricFilterRegexText(value, fallback) {
+  if (value == null) return fallback == null ? DEFAULT_LYRIC_FILTER_REGEX : String(fallback);
+  return String(value).trim();
+}
+// 读取或导入时校验歌词过滤正则，非法值回退到默认规则。
+function normalizeSavedLyricFilterRegex(value) {
+  // 候选正则文本。
+  var pattern = normalizeLyricFilterRegexText(value, DEFAULT_LYRIC_FILTER_REGEX);
+  if (!pattern) return '';
+  try {
+    // 只验证语法，不在这里执行匹配。
+    new RegExp(pattern);
+    return pattern;
+  } catch (e) {
+    return DEFAULT_LYRIC_FILTER_REGEX;
+  }
+}
 // 从 localStorage 读取歌词布局和视觉配置。
 function readSavedLyricLayout() {
   try {
@@ -5621,6 +5647,8 @@ function readSavedLyricLayout() {
       lyricLetterSpacing: clampRange(Number(raw.lyricLetterSpacing) || 0, -0.04, 0.18),
       lyricLineHeight: clampRange(Number(raw.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(raw.lyricWeight) || 900, 500, 900),
+      lyricFilterEnabled: raw.lyricFilterEnabled !== false,
+      lyricFilterRegex: normalizeSavedLyricFilterRegex(raw.lyricFilterRegex),
       lyricGlow: raw.lyricGlow !== false,
       lyricGlowBeat: raw.lyricGlowBeat !== false,
       lyricGlowParticles: !!raw.lyricGlowParticles,
@@ -5699,6 +5727,8 @@ function saveLyricLayout() {
       lyricLetterSpacing: clampRange(Number(fx.lyricLetterSpacing) || 0, -0.04, 0.18),
       lyricLineHeight: clampRange(Number(fx.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(fx.lyricWeight) || 900, 500, 900),
+      lyricFilterEnabled: fx.lyricFilterEnabled !== false,
+      lyricFilterRegex: normalizeSavedLyricFilterRegex(fx.lyricFilterRegex),
       lyricGlow: !!fx.lyricGlow,
       lyricGlowBeat: !!fx.lyricGlowBeat,
       lyricGlowParticles: !!fx.lyricGlowParticles,
@@ -12428,6 +12458,165 @@ function isNoLyricText(text) {
     compact === '暂无歌词敬请期待' ||
     compact === '此歌曲为没有填词的纯音乐请您欣赏';
 }
+// 读取当前歌词过滤正则文本。
+function currentLyricFilterRegexText() {
+  return normalizeLyricFilterRegexText(
+    fx && fx.lyricFilterRegex,
+    fxDefaults.lyricFilterRegex || DEFAULT_LYRIC_FILTER_REGEX
+  );
+}
+// 编译当前可用的歌词过滤正则。
+function activeLyricFilterMatcher() {
+  if (!fx || fx.lyricFilterEnabled === false) return null;
+  // 空规则表示不开启实际过滤，避免空正则匹配所有歌词。
+  var pattern = currentLyricFilterRegexText();
+  if (!pattern) return null;
+  try {
+    return new RegExp(pattern);
+  } catch (e) {
+    return null;
+  }
+}
+// 获取首行过滤时展示的歌曲兜底文本。
+function lyricFilterFallbackText(snapshot) {
+  // 桥接快照中的当前歌曲。
+  var track = snapshot && snapshot.track ? snapshot.track : {};
+  // 歌名。
+  var title = String((track && (track.name || track.title)) || '').trim() || '未知歌曲';
+  // 歌手。
+  var artist = String((track && track.artist) || '').trim() || '未知歌手';
+  return title + ' - ' + artist;
+}
+// 生成歌词过滤签名，确保配置变化后同一份歌词也会重新处理。
+function lyricFilterSignature(snapshot) {
+  return [
+    fx && fx.lyricFilterEnabled !== false ? '1' : '0',
+    currentLyricFilterRegexText(),
+    lyricFilterFallbackText(snapshot)
+  ].join('::');
+}
+// 判断单行歌词是否命中过滤规则。
+function lyricLineMatchesFilter(line, matcher) {
+  if (!matcher || !line) return false;
+  // 主歌词优先，缺失时退回副歌词。
+  var text = String(line.text || line.secondary || '');
+  if (!text) return false;
+  matcher.lastIndex = 0;
+  return matcher.test(text);
+}
+// 构造首行被过滤时使用的合成歌词行。
+function buildLyricFilterFallbackLine(line, index, snapshot) {
+  // 复用被过滤行的时间字段，文本替换为歌曲信息。
+  var fallback = Object.assign({}, line || {});
+  fallback.text = lyricFilterFallbackText(snapshot);
+  fallback.secondary = '';
+  fallback.characters = [];
+  fallback.source = 'echo-filter-fallback';
+  fallback.source_index = line && line.source_index != null ? Number(line.source_index) : index;
+  return fallback;
+}
+// 给未过滤歌词补齐原始行号，避免过滤后使用压缩数组索引。
+function withLyricSourceIndex(line, index) {
+  if (!line || line.source_index != null) return line;
+  // 只在缺字段时浅拷贝，避免修改宿主传入的原始 payload。
+  return Object.assign({}, line, { source_index: index });
+}
+// 在接收阶段过滤歌词行；命中的中间行直接移除，让上一行自然延续。
+function filterReceivedLyricLines(lines, snapshot) {
+  if (!Array.isArray(lines) || !lines.length) return [];
+  // 当前过滤正则。
+  var matcher = activeLyricFilterMatcher();
+  if (!matcher) return lines;
+  // 过滤后的歌词行。
+  var output = [];
+  // 是否已经插入首行兜底。
+  var insertedFallback = false;
+  lines.forEach(function(line, index) {
+    if (!lyricLineMatchesFilter(line, matcher)) {
+      output.push(withLyricSourceIndex(line, index));
+      return;
+    }
+    if (!output.length && !insertedFallback) {
+      output.push(buildLyricFilterFallbackLine(line, index, snapshot));
+      insertedFallback = true;
+    }
+  });
+  return output;
+}
+// 正则配置变化后刷新桥接歌词缓存。
+function refreshLyricFilterOutput() {
+  if (typeof window !== 'undefined' && typeof window.__refreshBridgeLyricsAfterFilterChange === 'function') {
+    window.__refreshBridgeLyricsAfterFilterChange();
+  }
+}
+// 刷新歌词过滤控件状态。
+function updateLyricFilterControls() {
+  // 当前启用状态。
+  var enabled = !fx || fx.lyricFilterEnabled !== false;
+  // 当前正则文本。
+  var pattern = currentLyricFilterRegexText();
+  // 配置块。
+  var config = document.getElementById('lyric-filter-config');
+  if (config) config.classList.toggle('off', !enabled);
+  // 开关按钮。
+  var toggle = document.getElementById('t-lyricFilterEnabled');
+  if (toggle) {
+    toggle.classList.toggle('on', enabled);
+    toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+  // 正则输入框。
+  var input = document.getElementById('lyric-filter-regex');
+  if (input && input.value !== pattern) input.value = pattern;
+}
+// 设置歌词过滤开关。
+function setLyricFilterEnabled(enabled, silent) {
+  if (!fx) return;
+  // 新状态。
+  var next = enabled !== false;
+  if (fx.lyricFilterEnabled === next) {
+    updateLyricFilterControls();
+    return;
+  }
+  fx.lyricFilterEnabled = next;
+  updateLyricFilterControls();
+  saveLyricLayout();
+  refreshLyricFilterOutput();
+  if (!silent) showToast(next ? '歌词过滤已开启' : '歌词过滤已关闭');
+}
+// 切换歌词过滤开关。
+function toggleLyricFilterEnabled() {
+  setLyricFilterEnabled(!(fx && fx.lyricFilterEnabled !== false));
+}
+// 设置歌词过滤正则；非法正则会保留旧规则。
+function setLyricFilterRegex(pattern, silent) {
+  if (!fx) return false;
+  // 旧规则用于非法输入回退。
+  var previous = normalizeSavedLyricFilterRegex(fx.lyricFilterRegex);
+  // 新规则，允许清空表示不实际过滤。
+  var next = normalizeLyricFilterRegexText(pattern, '');
+  if (next) {
+    try {
+      new RegExp(next);
+    } catch (e) {
+      fx.lyricFilterRegex = previous;
+      updateLyricFilterControls();
+      showToast('歌词过滤正则无效，已保留旧规则');
+      return false;
+    }
+  }
+  fx.lyricFilterRegex = next;
+  updateLyricFilterControls();
+  saveLyricLayout();
+  refreshLyricFilterOutput();
+  if (!silent) showToast(next ? '歌词过滤规则已更新' : '歌词过滤规则已清空');
+  return true;
+}
+// 恢复默认歌词过滤正则。
+function resetLyricFilterRegex() {
+  if (setLyricFilterRegex(DEFAULT_LYRIC_FILTER_REGEX, true)) {
+    showToast('已恢复默认歌词过滤规则');
+  }
+}
 // 渲染歌词入口；当前版本由 3D 舞台歌词系统接管。
 function renderLyrics() {
   // v8: 歌词渲染由 stageLyrics 在每帧 tickLyricsParticles 里推动
@@ -12933,6 +13122,8 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricLetterSpacing: archiveNumber(raw, 'lyricLetterSpacing', fxDefaults.lyricLetterSpacing, -0.04, 0.18),
     lyricLineHeight: archiveNumber(raw, 'lyricLineHeight', fxDefaults.lyricLineHeight, 0.86, 1.35),
     lyricWeight: archiveNumber(raw, 'lyricWeight', fxDefaults.lyricWeight, 500, 900),
+    lyricFilterEnabled: raw.lyricFilterEnabled !== false,
+    lyricFilterRegex: normalizeSavedLyricFilterRegex(raw.lyricFilterRegex),
     visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
     visualTintColor: normalizeHexColor(raw.visualTintColor || fxDefaults.visualTintColor),
     uiAccentColor: normalizeHexColor(raw.uiAccentColor || fxDefaults.uiAccentColor, fxDefaults.uiAccentColor),
@@ -14387,6 +14578,7 @@ function updateFxInputs() {
   setRange('fx-scatter', fx.scatter);
   setRange('fx-bgfade', fx.bgFade);
   updateLyricGlowControls();
+  updateLyricFilterControls();
   // 同步开关
   // 浮空粒子开关。
   document.getElementById('t-float').classList.toggle('on', fx.floatLayer);
@@ -14873,6 +15065,26 @@ function bindFxPanel() {
   if (bgColorPicker) {
     bgColorPicker.addEventListener('input', function(){ setCustomBackgroundColor(bgColorPicker.value, true); });
     bgColorPicker.addEventListener('change', function(){ showToast('背景颜色: ' + normalizeHexColor(bgColorPicker.value, '#000000').toUpperCase()); });
+  }
+  // 歌词过滤正则输入。
+  var lyricFilterRegexInput = document.getElementById('lyric-filter-regex');
+  if (lyricFilterRegexInput) {
+    lyricFilterRegexInput.addEventListener('change', function(){
+      setLyricFilterRegex(lyricFilterRegexInput.value);
+    });
+    lyricFilterRegexInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setLyricFilterRegex(lyricFilterRegexInput.value);
+      }
+    });
+  }
+  // 默认歌词过滤规则按钮。
+  var lyricFilterDefaultBtn = document.getElementById('lyric-filter-default-btn');
+  if (lyricFilterDefaultBtn) {
+    lyricFilterDefaultBtn.addEventListener('click', function(){
+      resetLyricFilterRegex();
+    });
   }
   // 歌单架强调色选择器。
   var shelfAccentPicker = document.getElementById('shelf-accent-picker');
@@ -16898,6 +17110,8 @@ function startMainLoopSafely() {
   var bridgeQueueKey = '';
   // 最近一次歌词签名。
   var bridgeLyricKey = '';
+  // 最近一次未经过滤处理的歌词载荷。
+  var bridgeRawLyricsPayload = null;
   // 宿主播放时钟锚点。
   var bridgePlaybackClock = { time: 0, duration: 0, playing: false, rate: 1, receivedAt: 0 };
   // 宿主控制能力。
@@ -17414,13 +17628,15 @@ function startMainLoopSafely() {
   }
 
   // 应用宿主推送的歌词载荷。
-  function applyLyricsPayload(payload) {
+  function applyLyricsPayload(payload, options) {
     // 歌词包用 key 去重；逐字歌词会保留到 characters，没有逐字时退回行级时间。
+    options = options || {};
     payload = payload || {};
+    if (!options.fromCache) bridgeRawLyricsPayload = payload;
     // 宿主歌词行数组。
     var lines = Array.isArray(payload.lines) ? payload.lines : [];
     // 歌词去重签名，优先使用宿主 key，否则按行时间、文本和逐字时间生成。
-    var key = payload.key || (lines.length + '|' + lines.map(function(line) {
+    var rawKey = payload.key || (lines.length + '|' + lines.map(function(line) {
       // 当前行逐字歌词数组。
       var chars = Array.isArray(line.characters) ? line.characters : [];
       // 当前行逐字歌词签名。
@@ -17431,13 +17647,17 @@ function startMainLoopSafely() {
       // 行级时间、主文本、翻译文本和逐字签名组成整行签名。
       return [line.time_ms || line.t || line.time || 0, line.text || '', line.secondary || '', charKey].join(':');
     }).join('|'));
-    if (key === bridgeLyricKey) return;
+    // 过滤配置也纳入签名，保证同一份歌词在配置变化后重新处理。
+    var key = rawKey + '::filter::' + lyricFilterSignature(bridgeSnapshot);
+    if (!options.force && key === bridgeLyricKey) return;
     bridgeLyricKey = key;
-    lyricsLines = lines.map(function(line, index) {
+    // 收到歌词时统一生成过滤后的时间轴，渲染层不再判断过滤规则。
+    var filteredLines = filterReceivedLyricLines(lines, bridgeSnapshot);
+    lyricsLines = filteredLines.map(function(line, index) {
       // 当前行开始时间，宿主优先使用毫秒字段。
       var startMs = line.time_ms != null ? Number(line.time_ms || 0) : Number(line.t || line.time || 0) * 1000;
       // 下一行开始时间，用于推算当前行持续时间。
-      var nextMs = lines[index + 1] ? (lines[index + 1].time_ms != null ? Number(lines[index + 1].time_ms || 0) : Number(lines[index + 1].t || lines[index + 1].time || 0) * 1000) : 0;
+      var nextMs = filteredLines[index + 1] ? (filteredLines[index + 1].time_ms != null ? Number(filteredLines[index + 1].time_ms || 0) : Number(filteredLines[index + 1].t || filteredLines[index + 1].time || 0) * 1000) : 0;
       // 当前行开始秒。
       var start = Math.max(0, startMs || 0) / 1000;
       // 下一行开始秒。
@@ -17469,6 +17689,12 @@ function startMainLoopSafely() {
     lyricsTimingSource = lyricsLines.length ? (lyricsHasNativeKaraoke ? 'echo-characters' : 'echo-line') : 'none';
     refreshBridgeLyricsSurface();
   }
+
+  // 歌词过滤配置变化时，使用最近一次原始歌词载荷重新生成时间轴。
+  window.__refreshBridgeLyricsAfterFilterChange = function() {
+    if (!bridgeRawLyricsPayload) return;
+    applyLyricsPayload(bridgeRawLyricsPayload, { force: true, fromCache: true });
+  };
 
   // 应用宿主播放队列快照。
   function applyQueue(snapshot) {
