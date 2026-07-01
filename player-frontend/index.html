@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EchoMusic Player</title>
 <meta name="referrer" content="no-referrer">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
 <script src="vendor/three.r128.min.js"></script>
 <script src="vendor/gsap.min.js"></script>
 <link rel="stylesheet" href="index.css">
@@ -116,21 +115,6 @@
         <input id="lyric-glow-picker" class="lyric-color-picker" type="color" value="#9db8cf" title="溢光取色">
         <div class="lyric-color-value" id="lyric-glow-value">跟随高亮</div>
         <button class="fx-mini-btn ghost active" id="lyric-glow-link-btn" type="button" onclick="toggleLyricGlowLink(event)">链接</button>
-      </div>
-      <div class="fx-section-label">歌词字体</div>
-      <div class="fx-font-grid expanded" id="lyric-font-grid">
-        <button type="button" data-font="sans" onclick="setLyricFont('sans')">默认</button>
-        <button type="button" data-font="hei" onclick="setLyricFont('hei')">黑体</button>
-        <button type="button" data-font="song" onclick="setLyricFont('song')">宋体</button>
-        <button type="button" data-font="bold-song" onclick="setLyricFont('bold-song')">粗宋</button>
-        <button type="button" data-font="stone-song" onclick="setLyricFont('stone-song')">石印宋</button>
-        <button type="button" data-font="kai-song" onclick="setLyricFont('kai-song')">楷宋</button>
-        <button type="button" data-font="serif-en" onclick="setLyricFont('serif-en')">Serif</button>
-        <button type="button" data-font="gothic" onclick="setLyricFont('gothic')">Gothic</button>
-        <button type="button" data-font="editorial" onclick="setLyricFont('editorial')">Editorial</button>
-        <button type="button" data-font="humanist" onclick="setLyricFont('humanist')">Humanist</button>
-        <button type="button" data-font="mono" onclick="setLyricFont('mono')">等宽</button>
-        <button type="button" data-font="display" onclick="setLyricFont('display')">标题</button>
       </div>
       <div class="fx-slider"><label>字间距</label><input id="fx-lyricspacing" type="range" min="-0.04" max="0.18" step="0.005"><output></output></div>
       <div class="fx-slider"><label>行距</label><input id="fx-lyriclineheight" type="range" min="0.86" max="1.35" step="0.01"><output></output></div>

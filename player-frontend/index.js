@@ -340,6 +340,10 @@ function maybeAnnounceDjMode() {
   }
 }
 
+// 桥接模式下舞台歌词跟随主程序页面歌词字体。
+var BRIDGE_LYRIC_FONT_FAMILY_FALLBACK = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+var bridgeLyricFontFamily = BRIDGE_LYRIC_FONT_FAMILY_FALLBACK;
+
 // fx 状态: 预设 + 主滑块 + 开关 + 三态
 // 用户可调视觉参数的默认值。fx 会在此基础上叠加本地存档，并在控制台、shader 和布局逻辑之间共享。
 var fxDefaults = {
@@ -383,8 +387,6 @@ var fxDefaults = {
   lyricGlowLinked: true,
   // 手动歌词辉光颜色。
   lyricGlowColor: '#008aff',
-  // 歌词字体族预设标识。
-  lyricFont: 'hei',
   // 歌词字间距倍率。
   lyricLetterSpacing: 0,
   // 歌词行高倍率。
@@ -501,7 +503,6 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   lyricHighlightColor: '#fac900',
   lyricGlowLinked: true,
   lyricGlowColor: '#008aff',
-  lyricFont: 'hei',
   lyricLetterSpacing: 0,
   lyricLineHeight: 1,
   lyricWeight: 900,
@@ -5617,7 +5618,6 @@ function readSavedLyricLayout() {
       lyricHighlightColor: normalizeHexColor(raw.lyricHighlightColor || '#fff0b8'),
       lyricGlowLinked: raw.lyricGlowLinked !== false,
       lyricGlowColor: normalizeHexColor(raw.lyricGlowColor || '#9db8cf'),
-      lyricFont: normalizeLyricFontKey(raw.lyricFont),
       lyricLetterSpacing: clampRange(Number(raw.lyricLetterSpacing) || 0, -0.04, 0.18),
       lyricLineHeight: clampRange(Number(raw.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(raw.lyricWeight) || 900, 500, 900),
@@ -5696,7 +5696,6 @@ function saveLyricLayout() {
       lyricHighlightColor: normalizeHexColor(fx.lyricHighlightColor || '#fff0b8'),
       lyricGlowLinked: fx.lyricGlowLinked !== false,
       lyricGlowColor: normalizeHexColor(fx.lyricGlowColor || '#9db8cf'),
-      lyricFont: normalizeLyricFontKey(fx.lyricFont),
       lyricLetterSpacing: clampRange(Number(fx.lyricLetterSpacing) || 0, -0.04, 0.18),
       lyricLineHeight: clampRange(Number(fx.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(fx.lyricWeight) || 900, 500, 900),
@@ -5835,39 +5834,19 @@ function rgbToHexColor(r, g, b) {
   }
   return '#' + part(r) + part(g) + part(b);
 }
-// 归一化歌词字体配置键。
-function normalizeLyricFontKey(value) {
-  // 未配置时默认使用 sans。
-  value = String(value || 'sans');
-  return /^(sans|hei|song|bold-song|stone-song|kai-song|serif-en|gothic|editorial|humanist|round|mono|display)$/.test(value) ? value : 'sans';
-}
-// 根据字体配置键返回 canvas 可用的字体栈。
-function lyricFontStackForKey(key) {
-  // 先归一化，确保后续分支只处理合法键。
-  key = normalizeLyricFontKey(key);
-  if (key === 'hei') return '"Noto Sans SC","Microsoft YaHei",SimHei,"PingFang SC",sans-serif';
-  if (key === 'song') return '"Noto Serif SC","Source Han Serif SC",SimSun,"Songti SC",serif';
-  if (key === 'bold-song') return '"Source Han Serif SC Heavy","Source Han Serif SC","Noto Serif SC Black","Noto Serif SC","STZhongsong","SimSun",serif';
-  if (key === 'stone-song') return '"FZYaSongS-B-GB","FZCuSong-B09S","Source Han Serif SC Heavy","Noto Serif SC Black","STZhongsong","SimSun",serif';
-  if (key === 'kai-song') return '"Kaiti SC","STKaiti","KaiTi","Source Han Serif SC","Noto Serif SC",serif';
-  if (key === 'serif-en') return 'Georgia,"Times New Roman","Noto Serif SC","Source Han Serif SC",serif';
-  if (key === 'gothic') return '"UnifrakturCook","UnifrakturMaguntia","Old English Text MT","Blackletter","Cinzel Decorative","Noto Serif SC",serif';
-  if (key === 'editorial') return '"Didot","Bodoni 72","Libre Baskerville",Georgia,"Noto Serif SC",serif';
-  if (key === 'humanist') return '"Avenir Next","Segoe UI","Inter","Noto Sans SC","PingFang SC",sans-serif';
-  if (key === 'round') return '"HarmonyOS Sans SC","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif';
-  if (key === 'mono') return '"JetBrains Mono",Consolas,"Noto Sans SC","Microsoft YaHei",monospace';
-  if (key === 'display') return '"Alibaba PuHuiTi","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif';
-  return 'Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif';
+// 归一化宿主下发的页面歌词字体族。
+function normalizeBridgeLyricFontFamily(value) {
+  var family = String(value || '').trim();
+  if (!family || /[\r\n;]/.test(family)) return BRIDGE_LYRIC_FONT_FAMILY_FALLBACK;
+  return family;
 }
 // 读取歌词字体字重。
 function lyricFontWeightValue() {
-  // 石刻宋体风格强制使用最高字重，保证纹理效果厚重。
-  if (normalizeLyricFontKey(fx && fx.lyricFont) === 'stone-song') return 900;
   return Math.round(clampRange(Number(fx && fx.lyricWeight) || 900, 500, 900) / 50) * 50;
 }
 // 生成 canvas 字体 CSS 字符串。
 function lyricFontCss(fontSize) {
-  return lyricFontWeightValue() + ' ' + fontSize + 'px ' + lyricFontStackForKey(fx && fx.lyricFont);
+  return lyricFontWeightValue() + ' ' + fontSize + 'px ' + normalizeBridgeLyricFontFamily(bridgeLyricFontFamily);
 }
 // 根据字体大小计算歌词字距像素值。
 function lyricLetterSpacingPx(fontSize) {
@@ -5937,93 +5916,6 @@ function lyricFillText(ctx, text, x, y, fontSize) {
 // 使用当前字距配置绘制描边歌词文本。
 function lyricStrokeText(ctx, text, x, y, fontSize) {
   drawTextWithLetterSpacing(ctx, text, x, y, lyricLetterSpacingPx(fontSize), true);
-}
-// 给石刻宋体歌词叠加颗粒、刮痕和缺口质感。
-function applyStonePrintTexture(ctx, W, H, fontSize) {
-  // 只有 stone-song 字体风格启用这层纹理。
-  if (normalizeLyricFontKey(fx && fx.lyricFont) !== 'stone-song') return;
-  // 纹理尺度随字体大小变化并限制范围。
-  var size = clampRange(fontSize || 128, 42, 180);
-  // 只在文字主体所在的中间带区域打磨纹理。
-  var bandTop = H * 0.10;
-  var bandH = H * 0.80;
-  ctx.save();
-  // destination-out 会从已经绘制的文字中扣出纹理。
-  ctx.globalCompositeOperation = 'destination-out';
-
-  // 生成一张小噪声贴图，再拉伸覆盖文字区域。
-  var noiseW = 300, noiseH = 110;
-  var noise = document.createElement('canvas');
-  noise.width = noiseW; noise.height = noiseH;
-  // 噪声 canvas 的上下文。
-  var nctx = noise.getContext('2d');
-  // 噪声像素数据。
-  var img = nctx.createImageData(noiseW, noiseH);
-  for (var p = 0; p < noiseW * noiseH; p++) {
-    // 像素坐标用于生成带方向感的纹理纹路。
-    var x0 = p % noiseW;
-    var y0 = Math.floor(p / noiseW);
-    // vein 叠加低频条纹，避免纯随机噪声过脏。
-    var vein = Math.sin(x0 * 0.19 + y0 * 0.043) * 0.10 + Math.sin(y0 * 0.31) * 0.06;
-    // r 决定当前像素的剥落透明度。
-    var r = Math.random() + vein;
-    // a 是用于抠除文字的 alpha。
-    var a = 0;
-    if (r > 0.82) a = 78 + Math.random() * 92;
-    else if (r > 0.62) a = 22 + Math.random() * 54;
-    else if (r > 0.48) a = 4 + Math.random() * 24;
-    img.data[p * 4] = 255;
-    img.data[p * 4 + 1] = 255;
-    img.data[p * 4 + 2] = 255;
-    img.data[p * 4 + 3] = a;
-  }
-  nctx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.globalAlpha = 0.34;
-  ctx.drawImage(noise, 0, bandTop, W, bandH);
-
-  // 随机矩形缺口模拟石印掉墨。
-  var chips = Math.round(size * 7.2);
-  for (var i = 0; i < chips; i++) {
-    // 单个缺口的位置和尺寸。
-    var x = Math.random() * W;
-    var y = bandTop + Math.random() * bandH;
-    var w = 0.7 + Math.random() * (size * 0.052);
-    var h = 0.45 + Math.random() * (size * 0.026);
-    ctx.globalAlpha = 0.16 + Math.random() * 0.36;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate((Math.random() - 0.5) * 0.38);
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.restore();
-  }
-
-  // 细线刮痕增强旧印刷质感。
-  ctx.lineCap = 'round';
-  for (var s = 0; s < 44; s++) {
-    // 单条刮痕的起点。
-    var sx = Math.random() * W;
-    var sy = bandTop + Math.random() * bandH;
-    ctx.globalAlpha = 0.09 + Math.random() * 0.16;
-    ctx.lineWidth = 0.45 + Math.random() * 1.2;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(sx + 10 + Math.random() * 86, sy + (Math.random() - 0.5) * 4.8);
-    ctx.stroke();
-  }
-
-  // 椭圆磨损块用于模拟局部色块脱落。
-  for (var c = 0; c < 26; c++) {
-    // 单个磨损块中心和半径。
-    var cx = Math.random() * W;
-    var cy = bandTop + Math.random() * bandH;
-    var radius = 1.8 + Math.random() * (size * 0.060);
-    ctx.globalAlpha = 0.08 + Math.random() * 0.18;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, radius * (0.7 + Math.random() * 1.4), radius * (0.25 + Math.random() * 0.55), Math.random() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
 }
 // 将六位十六进制颜色转换为 RGB 对象。
 function hexToRgb(hex) {
@@ -6825,8 +6717,6 @@ function makeLyricMask(text) {
       lyricFillText(ctx, lines[di], x, y0 + di * lineHeight, fontSize);
     }
   }
-  // 石刻字体额外扣出印刷纹理。
-  applyStonePrintTexture(ctx, W, H, fontSize);
   // 把遮罩 canvas 转为 Three.js 纹理。
   var tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
@@ -13040,7 +12930,6 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricHighlightColor: normalizeHexColor(raw.lyricHighlightColor || fxDefaults.lyricHighlightColor),
     lyricGlowLinked: raw.lyricGlowLinked !== false,
     lyricGlowColor: normalizeHexColor(raw.lyricGlowColor || fxDefaults.lyricGlowColor),
-    lyricFont: normalizeLyricFontKey(raw.lyricFont),
     lyricLetterSpacing: archiveNumber(raw, 'lyricLetterSpacing', fxDefaults.lyricLetterSpacing, -0.04, 0.18),
     lyricLineHeight: archiveNumber(raw, 'lyricLineHeight', fxDefaults.lyricLineHeight, 0.86, 1.35),
     lyricWeight: archiveNumber(raw, 'lyricWeight', fxDefaults.lyricWeight, 500, 900),
@@ -14136,20 +14025,6 @@ function pickCoverColorFromArt(e) {
     closeCoverColorPicker();
   }
 }
-// 刷新歌词字体按钮状态。
-function updateLyricFontControls() {
-  document.querySelectorAll('#lyric-font-grid button').forEach(function(btn){
-    btn.classList.toggle('active', btn.dataset.font === normalizeLyricFontKey(fx.lyricFont));
-  });
-}
-// 设置歌词字体。
-function setLyricFont(key) {
-  fx.lyricFont = normalizeLyricFontKey(key);
-  updateLyricFontControls();
-  refreshCurrentLyricStyle();
-  saveLyricLayout();
-  showToast('歌词字体已切换');
-}
 // 设置歌词溢光是否跟随高亮色。
 function setLyricGlowLinked(linked, openPicker) {
   fx.lyricGlowLinked = linked !== false;
@@ -14553,7 +14428,6 @@ function updateFxInputs() {
   updateLyricColorControls();
   updateLyricHighlightControls();
   updateLyricGlowControls();
-  updateLyricFontControls();
   updateUiAccentControls();
   updateIconAccentControls();
   updateCustomBackgroundControls();
@@ -14733,7 +14607,7 @@ function fxControlBlock(id) {
   // 目标元素。
   var el = document.getElementById(id);
   if (!el) return null;
-  return el.closest('.fx-slider,.lyric-color-row,.lyric-color-grid,.fx-seg,.preset-grid,.user-archive-grid,.fx-font-grid') || el;
+  return el.closest('.fx-slider,.lyric-color-row,.lyric-color-grid,.fx-seg,.preset-grid,.user-archive-grid') || el;
 }
 // 在指定控件块前确保有分区标题。
 function setFxSectionBefore(id, text) {
@@ -14844,7 +14718,7 @@ function relabelFxPanelControls() {
   setFxSectionBefore('lyric-color-grid', '文字颜色');
   setFxSectionBefore('lyric-highlight-picker', '跟唱高亮');
   setFxSectionBefore('lyric-glow-row', '歌词溢光颜色');
-  setFxSectionBefore('lyric-font-grid', '字体与字距');
+  setFxSectionBefore('fx-lyricspacing', '字距与排版');
   setFxSectionBefore('fx-lyricscale', '位置与角度');
   setFxSectionBefore('shelf-seg', '3D 歌单架');
   setFxSectionBefore('shelf-camera-seg', '歌单架镜头');
@@ -17178,6 +17052,14 @@ function startMainLoopSafely() {
     if (typeof updatePlaybackProgressUi === 'function') updatePlaybackProgressUi();
   }
 
+  // 应用宿主外观设置，舞台歌词字体跟随主程序页面歌词字体。
+  function applyAppearancePayload(payload) {
+    var nextFamily = normalizeBridgeLyricFontFamily(payload && payload.lyricFontFamily);
+    if (nextFamily === bridgeLyricFontFamily) return;
+    bridgeLyricFontFamily = nextFamily;
+    if (typeof refreshCurrentLyricStyle === 'function') refreshCurrentLyricStyle();
+  }
+
   // 转义 CSS url 中的双引号。
   function escapeCssUrl(value) {
     return String(value || '').replace(/"/g, '\\"');
@@ -17878,6 +17760,7 @@ function startMainLoopSafely() {
       var initPayload = data.payload || {};
       playerFrontendVersion = String(initPayload.pluginVersion || '').trim();
       bridgeHostControls = Object.assign(bridgeHostControls, initPayload.hostControls || {});
+      applyAppearancePayload(initPayload.appearance);
       forcePlayerSurface();
       refreshBridgeViewport('echo-bridge-init');
       installWindowControls();
@@ -17892,6 +17775,9 @@ function startMainLoopSafely() {
     } else if (data.type === 'echo-player-frontend:position') {
       // 位置消息事件驱动到达，更新播放时钟锚点。
       applyPositionPayload(data.payload);
+    } else if (data.type === 'echo-player-frontend:appearance') {
+      // 外观消息同步主程序页面歌词字体等设置。
+      applyAppearancePayload(data.payload);
     } else if (data.type === 'echo-player-frontend:spectrum') {
       // 频谱消息只写入宿主频谱帧，主循环下一帧再消费。
       var spectrum = data.payload || {};

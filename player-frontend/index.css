@@ -2405,44 +2405,6 @@ body.controls-visible #fx-fab {
 .lyric-color-row.linked:hover .lyric-color-value {
   color: rgba(255,255,255,.52);
 }
-.fx-font-grid {
-  display: grid;
-  grid-template-columns: repeat(3,minmax(0,1fr));
-  gap: 7px;
-  margin: 8px 0 10px;
-}
-.fx-font-grid button {
-  min-height: 32px;
-  border-radius: 9px;
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.030);
-  color: rgba(255,255,255,.58);
-  font-family: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background .18s,border-color .18s,color .18s,transform .18s;
-}
-.fx-font-grid.expanded {
-  grid-template-columns: repeat(4,minmax(0,1fr));
-}
-.fx-font-grid button[data-font="gothic"] {
-  font-family: "UnifrakturCook","UnifrakturMaguntia","Old English Text MT","Blackletter","Cinzel Decorative",serif;
-  font-size: 12.5px;
-}
-.fx-font-grid button[data-font="stone-song"], .fx-font-grid button[data-font="bold-song"] {
-  font-family: "Source Han Serif SC","Noto Serif SC","STZhongsong","SimSun",serif;
-  font-weight: 800;
-}
-.fx-font-grid button:hover {
-  background: rgba(255,255,255,.06);
-  color: #fff;
-  transform: translateY(-1px);
-}
-.fx-font-grid button.active {
-  border-color: rgba(var(--fc-accent-rgb),.36);
-  background: rgba(var(--fc-accent-rgb),.09);
-  color: #fff;
-}
 .fx-color-row-label {
   font-size: 11px;
   color: rgba(255,255,255,.66);

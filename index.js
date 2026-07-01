@@ -137,6 +137,7 @@ function createPlayerFrame(ctx, closeOverlay) {
       let lastLyricStoreKey = ''
       let stopTrackWatch = null
       let stopVolumeWatch = null
+      let stopFontWatch = null
       let commandQueue = Promise.resolve()
       // 位置心跳定时器，每 5 秒向 iframe 推送一次当前进度，防止长时间播放后时钟漂移。
       let positionHeartbeatTimer = null
@@ -272,6 +273,22 @@ function createPlayerFrame(ctx, closeOverlay) {
         }
       }
 
+      // 从主程序设置读取页面歌词字体，iframe 内的舞台歌词始终跟随这个字体族。
+      const buildAppearancePayload = () => {
+        const settings = ctx.stores.settings || ctx.settings
+        let lyricFontFamily = ''
+        try {
+          if (typeof settings?.buildLyricFontFamily === 'function') {
+            lyricFontFamily = settings.buildLyricFontFamily()
+          }
+        } catch (error) {
+          console.warn('[PlayerFrontendBridge] 读取歌词字体失败', error)
+        }
+        return {
+          lyricFontFamily: String(lyricFontFamily || '').trim(),
+        }
+      }
+
       // 把宿主窗口能力暴露给 iframe，子页面据此决定是否显示全屏、小窗等按钮。
       const buildHostControlsPayload = () => ({
         platform: String(window.electron?.platform || ''),
@@ -299,6 +316,15 @@ function createPlayerFrame(ctx, closeOverlay) {
         postToFrame({
           type: 'echo-player-frontend:position',
           payload: buildPositionPayload(cause),
+        })
+      }
+
+      // 推送主程序外观设置，例如页面歌词字体。
+      const pushAppearance = (force = false) => {
+        if (!ready && !force) return
+        postToFrame({
+          type: 'echo-player-frontend:appearance',
+          payload: buildAppearancePayload(),
         })
       }
 
@@ -361,6 +387,23 @@ function createPlayerFrame(ctx, closeOverlay) {
           () => {
             if (!ready || disposed) return
             pushSnapshot(true)
+          },
+        )
+      }
+
+      // 监听主程序字体设置变化，同步刷新 iframe 内 canvas 歌词纹理。
+      const initFontWatch = () => {
+        if (stopFontWatch) return
+        const settings = ctx.stores.settings || ctx.settings
+        stopFontWatch = ctx.vue.watch(
+          () => [
+            String(settings?.lyricFont || ''),
+            String(settings?.globalFont || ''),
+            buildAppearancePayload().lyricFontFamily,
+          ].join('::'),
+          () => {
+            if (!ready || disposed) return
+            pushAppearance(true)
           },
         )
       }
@@ -537,6 +580,7 @@ function createPlayerFrame(ctx, closeOverlay) {
                 directEnter: true,
                 pluginVersion: String(ctx.manifest?.version || ''),
                 hostControls: buildHostControlsPayload(),
+                appearance: buildAppearancePayload(),
               },
             })
             pushSnapshot(true)
@@ -555,6 +599,7 @@ function createPlayerFrame(ctx, closeOverlay) {
           case 'echo-player-frontend:request-snapshot':
             pushSnapshot(true)
             pushLyrics(true)
+            pushAppearance(true)
             pushPosition('init')
             break
         }
@@ -588,6 +633,7 @@ function createPlayerFrame(ctx, closeOverlay) {
         initLyricStoreSubscription()
         initTrackWatch()
         initVolumeWatch()
+        initFontWatch()
         startPositionHeartbeat()
 
         try {
@@ -628,6 +674,8 @@ function createPlayerFrame(ctx, closeOverlay) {
         stopTrackWatch = null
         if (stopVolumeWatch) stopVolumeWatch()
         stopVolumeWatch = null
+        if (stopFontWatch) stopFontWatch()
+        stopFontWatch = null
         if (spectrumDispose) spectrumDispose()
         spectrumDispose = null
       })
